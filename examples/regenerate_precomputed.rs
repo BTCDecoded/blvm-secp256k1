@@ -28,7 +28,12 @@ fn main() {
         std::process::exit(1);
     });
 
-    println!("Wrote {} ({} PRE_G, {} PRE_G_128)", out_path.display(), pre_g.len(), pre_g_128.len());
+    println!(
+        "Wrote {} ({} PRE_G, {} PRE_G_128)",
+        out_path.display(),
+        pre_g.len(),
+        pre_g_128.len()
+    );
 }
 
 fn parse_precomputed(content: &str) -> (Vec<String>, Vec<String>) {

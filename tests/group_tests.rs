@@ -16,8 +16,10 @@ fn test_generator_matches_curve() {
     gx.get_b32(&mut our_x);
     gy.get_b32(&mut our_y);
     // SEC2 secp256k1 generator G (32 bytes = 64 hex chars each)
-    let expected_x = hex::decode("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798").unwrap();
-    let expected_y = hex::decode("483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8").unwrap();
+    let expected_x =
+        hex::decode("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798").unwrap();
+    let expected_y =
+        hex::decode("483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8").unwrap();
     assert_eq!(our_x, expected_x.as_slice(), "G.x mismatch");
     assert_eq!(our_y, expected_y.as_slice(), "G.y mismatch");
 }

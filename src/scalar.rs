@@ -506,18 +506,17 @@ fn write_be64(b: &mut [u8], v: u64) {
     b[0..8].copy_from_slice(&v.to_be_bytes());
 }
 
-#[allow(clippy::needless_return)]
 fn scalar_mul_512(l: &mut [u64; 8], a: &Scalar, b: &Scalar) {
     #[cfg(target_arch = "x86_64")]
     {
         unsafe {
             scalar_asm::scalar_mul_512_asm(l.as_mut_ptr(), a, b);
         }
-        return;
     }
-
     #[cfg(not(target_arch = "x86_64"))]
-    scalar_mul_512_rust(l, a, b);
+    {
+        scalar_mul_512_rust(l, a, b);
+    }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
@@ -772,17 +771,16 @@ fn scalar_check_overflow(r: &Scalar) -> u64 {
     yes
 }
 
-#[allow(clippy::needless_return)]
 fn scalar_reduce_512(r: &mut Scalar, l: &[u64; 8]) {
     #[cfg(target_arch = "x86_64")]
     {
         let c = unsafe { scalar_asm::scalar_reduce_512_asm(r, l.as_ptr()) };
         scalar_reduce(r, c + scalar_check_overflow(r));
-        return;
     }
-
     #[cfg(not(target_arch = "x86_64"))]
-    scalar_reduce_512_limbs(r, l);
+    {
+        scalar_reduce_512_limbs(r, l);
+    }
 }
 
 #[cfg(test)]

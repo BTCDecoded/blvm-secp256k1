@@ -70,10 +70,7 @@ fn test_schnorr_bip340_vectors() {
             assert_eq!(computed_pk, pk, "pubkey mismatch");
 
             let our_sig = schnorr_sign(&seckey, &msg, &aux).expect("sign");
-            assert!(
-                schnorr_verify(&our_sig, &msg, &pk),
-                "our sig should verify"
-            );
+            assert!(schnorr_verify(&our_sig, &msg, &pk), "our sig should verify");
         }
     }
 }
@@ -135,7 +132,10 @@ fn test_schnorr_verify_batch() {
     let msgs: Vec<&[u8]> = vec![msg1, msg2];
     let pubkeys = vec![pk, pk];
 
-    assert!(schnorr_verify_batch(&sigs, &msgs, &pubkeys), "batch should verify");
+    assert!(
+        schnorr_verify_batch(&sigs, &msgs, &pubkeys),
+        "batch should verify"
+    );
 
     // Large batch (90 sigs) exercises Pippenger path
     let mut large_sigs = Vec::with_capacity(90);

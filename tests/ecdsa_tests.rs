@@ -1,9 +1,9 @@
 //! ECDSA sign/verify tests.
 
 use blvm_secp256k1::ecdsa::{
-    ecdsa_sig_normalize, ecdsa_sig_parse_der, ecdsa_sig_parse_der_lax,
-    ecdsa_sig_serialize_der, ecdsa_sig_sign, ecdsa_sig_verify, ecdsa_sig_verify_exhaustive,
-    ge_from_compressed, ge_to_compressed, pubkey_from_secret,
+    ecdsa_sig_normalize, ecdsa_sig_parse_der, ecdsa_sig_parse_der_lax, ecdsa_sig_serialize_der,
+    ecdsa_sig_sign, ecdsa_sig_verify, ecdsa_sig_verify_exhaustive, ge_from_compressed,
+    ge_to_compressed, pubkey_from_secret,
 };
 use blvm_secp256k1::ecmult;
 use blvm_secp256k1::group::{generator_g, Gej};

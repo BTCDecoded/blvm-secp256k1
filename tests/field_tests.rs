@@ -118,8 +118,8 @@ fn test_field_normalizes_to_zero_var() {
     // -a + a should normalize to 0 (used in gej_add when P1 = P2)
     // Use secp256k1 generator G x-coordinate (well-known constant)
     // secp256k1 generator G x-coordinate (32 bytes = 64 hex chars)
-    let gx = hex::decode("79be667ef9dcbbac55a06295ce870b0729bfcdb2dce28d959f2815b16f817998")
-        .unwrap();
+    let gx =
+        hex::decode("79be667ef9dcbbac55a06295ce870b0729bfcdb2dce28d959f2815b16f817998").unwrap();
     let mut gx_arr = [0u8; 32];
     gx_arr.copy_from_slice(&gx);
     let mut a = FieldElement::zero();
