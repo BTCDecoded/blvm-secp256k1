@@ -1,6 +1,6 @@
 [package]
 name = "blvm-secp256k1"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Bitcoin Commons Team"]
 description = "Rust reimplementation of libsecp256k1 with ASM for hot paths. Performance-optimized secp256k1 for Bitcoin/Ethereum."
