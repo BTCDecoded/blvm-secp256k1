@@ -922,6 +922,9 @@ mod bip66_strict_der_regression {
         let der = hex::decode(der_hex).expect("hex");
         assert_eq!(der.len(), 71, "DER without sighash byte");
         let parsed = ecdsa_sig_parse_der(&der);
-        assert!(parsed.is_some(), "strict DER parse failed for known-mainnet sig");
+        assert!(
+            parsed.is_some(),
+            "strict DER parse failed for known-mainnet sig"
+        );
     }
 }
