@@ -7,7 +7,7 @@ description = "Rust reimplementation of libsecp256k1 with ASM for hot paths. Per
 license = "MIT"
 repository = "https://github.com/BTCDecoded/blvm-secp256k1"
 keywords = ["secp256k1", "bitcoin", "ecdsa", "schnorr", "cryptography"]
-categories = ["cryptography::cryptographic-primitives"]
+categories = ["cryptography", "algorithms"]
 rust-version = "1.70"
 
 [lib]
