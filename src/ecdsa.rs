@@ -346,10 +346,7 @@ pub fn ecdsa_sig_verify_exhaustive(
         let mut cr = [0u8; 32];
         sigr.get_b32(&mut sr);
         computed_r.get_b32(&mut cr);
-        eprintln!(
-            "ecdsa_sig_verify_exhaustive: sigr={:02x?} computed_r={:02x?}",
-            sr, cr
-        );
+        eprintln!("ecdsa_sig_verify_exhaustive: sigr={sr:02x?} computed_r={cr:02x?}");
     }
     ok
 }
