@@ -2,11 +2,15 @@
 //!
 //! Key aggregation, nonce gen/agg, nonce_process, partial_sign, partial_sig_verify, partial_sig_agg.
 //! Cross-validated with secp256k1-fork (libsecp256k1 FFI).
+//!
+//! **Timing:** `nonce_gen` and tweak application use constant-time `k*G` for secret scalars.
+//! Verification and key aggregation (public points) use variable-time `ecmult` / `ecmult_gen`.
 
 use sha2::{Digest, Sha256};
 
 use crate::ecdsa::{ge_from_compressed, ge_to_compressed, pubkey_from_secret};
 use crate::ecmult;
+use crate::ecmult_gen_const;
 use crate::field::FieldElement;
 use crate::group::{generator_g, Ge, Gej};
 use crate::scalar::Scalar;
@@ -134,7 +138,7 @@ impl KeyAggCache {
         self.tweak = t_acc;
 
         let mut tj = Gej::default();
-        ecmult::ecmult_gen(&mut tj, t);
+        ecmult_gen_const(&mut tj, t);
         let mut pj = Gej::default();
         pj.set_ge(&self.pk);
         if g < 0 {
@@ -463,8 +467,8 @@ pub fn nonce_gen(
 
     let mut r1j = Gej::default();
     let mut r2j = Gej::default();
-    ecmult::ecmult_gen(&mut r1j, &k1);
-    ecmult::ecmult_gen(&mut r2j, &k2);
+    ecmult_gen_const(&mut r1j, &k1);
+    ecmult_gen_const(&mut r2j, &k2);
 
     let mut r1 = Ge::default();
     let mut r2 = Ge::default();
@@ -517,11 +521,12 @@ pub fn partial_sign(
         return None;
     }
 
-    // Negate sk if Q has odd y XOR parity_acc (BIP 327: d = g*gacc*d')
-    if keyagg_cache.pk.y.is_odd() != (keyagg_cache.parity_acc != 0) {
-        let sk_val = sk;
-        sk.negate(&sk_val);
-    }
+    // Negate sk if Q has odd y XOR parity_acc (BIP 327: d = g*gacc*d').
+    // Condition is on PUBLIC aggregate key parity — not the secret key itself.
+    // Use cond_negate for consistency with the library's CT style.
+    let negate_sk =
+        ((keyagg_cache.pk.y.is_odd() as i32) ^ (keyagg_cache.parity_acc as i32 & 1)) & 1;
+    sk.cond_negate(negate_sk);
 
     let mu = keyagg_coeff_internal(
         &keyagg_cache.pks_hash,
@@ -533,12 +538,12 @@ pub fn partial_sign(
 
     let mut k1_adj = k1;
     let mut k2_adj = k2;
-    if session.fin_nonce_parity != 0 {
-        let k1_val = k1;
-        k1_adj.negate(&k1_val);
-        let k2_val = k2;
-        k2_adj.negate(&k2_val);
-    }
+    // Negate both nonce halves if finalized nonce R has odd y (BIP 327).
+    // fin_nonce_parity is a PUBLIC value (derived from public nonces),
+    // but k1/k2 are SECRET — use cond_negate to avoid an observable branch.
+    let parity = session.fin_nonce_parity as i32;
+    k1_adj.cond_negate(parity);
+    k2_adj.cond_negate(parity);
 
     let mut s = Scalar::zero();
     s.mul(&session.challenge, &sk_mu);

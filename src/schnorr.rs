@@ -2,10 +2,15 @@
 //!
 //! 32-byte x-only pubkeys, 64-byte signatures (r || s).
 //! Tagged hashes: SHA256(SHA256(tag) || SHA256(tag) || x).
+//!
+//! **Timing:** `schnorr_sign` and `xonly_pubkey_from_secret` use constant-time `k*G` and pubkey
+//! derivation. `schnorr_verify` / batch verify use public-data variable-time `ecmult`.
 
 use sha2::{Digest, Sha256};
+use subtle::Choice;
 
 use crate::ecmult;
+use crate::ecmult_gen_const;
 use crate::field::FieldElement;
 use crate::group::{Ge, Gej};
 use crate::scalar::Scalar;
@@ -93,15 +98,11 @@ pub fn xonly_pubkey_from_secret(seckey: &[u8; 32]) -> Option<[u8; 32]> {
         return None;
     }
     let mut pj = Gej::default();
-    ecmult::ecmult_gen(&mut pj, &d);
+    ecmult_gen_const(&mut pj, &d);
     let mut p = Ge::default();
     p.set_gej_var(&pj);
     p.x.normalize();
-    p.y.normalize();
-    if p.y.is_odd() {
-        let y = p.y;
-        p.y.negate(&y, 1);
-    }
+    // x-only encoding depends only on x (same for (x,y) and (x,-y)).
     let mut out = [0u8; 32];
     p.x.get_b32(&mut out);
     Some(out)
@@ -489,20 +490,109 @@ pub fn schnorr_sign(seckey: &[u8; 32], msg: &[u8], aux_rand32: &[u8; 32]) -> Opt
         return None;
     }
 
-    // Single ecmult_gen for pubkey P = d*G
+    // P = d*G — d is secret, must use the constant-time path. (Previous implementation
+    // mistakenly used the var-time `ecmult::ecmult_gen`, which leaked timing on `d`.)
     let mut pj = Gej::default();
-    ecmult::ecmult_gen(&mut pj, &d);
+    ecmult_gen_const(&mut pj, &d);
     let mut p_ge = Ge::default();
     p_ge.set_gej_var(&pj);
     p_ge.x.normalize();
     p_ge.y.normalize();
+    let pk_parity_odd = p_ge.y.is_odd();
+    let pk = ge_to_xonly(&p_ge);
 
-    let mut d_adj = d;
-    if p_ge.y.is_odd() {
-        d_adj.negate(&d);
+    schnorr_sign_inner(seckey, &d, pk_parity_odd, &pk, msg, aux_rand32)
+}
+
+/// BIP 340 Schnorr keypair: seckey + cached x-only pubkey (with parity already resolved).
+/// Equivalent to libsecp256k1's `secp256k1_keypair` and lets callers reuse one CT `d*G`
+/// across many signatures.
+#[derive(Clone, Copy, Debug)]
+pub struct Keypair {
+    /// **Original** secret key bytes (NOT y-flipped). The y-flip needed to produce a
+    /// signing-domain `d_adj` is decided by `pk_parity_odd` and re-applied per sign call.
+    /// Storing the original bytes avoids exposing the y-flip transformation to callers.
+    pub(crate) seckey: [u8; 32],
+    /// X-only pubkey (32 bytes) matching `d*G` lifted to the even-y representative.
+    pub(crate) pubkey_xonly: [u8; 32],
+    /// Whether `(d*G).y` was odd before the BIP340 even-y normalization (so signing
+    /// must use `-d` instead of `d`). One bit, public; carries no secret data.
+    pub(crate) pk_parity_odd: bool,
+}
+
+impl Keypair {
+    /// Derive `Keypair` from a 32-byte secret key. Performs **one** CT `d*G` and caches
+    /// the pubkey + parity so subsequent `schnorr_sign_with_keypair` calls only need the
+    /// `k*G` for the nonce (matches libsecp's `keypair_create` + `schnorrsig_sign32`).
+    pub fn from_seckey(seckey32: &[u8; 32]) -> Option<Self> {
+        let mut d = Scalar::zero();
+        if d.set_b32(seckey32) {
+            return None;
+        }
+        if d.is_zero() {
+            return None;
+        }
+        let mut pj = Gej::default();
+        ecmult_gen_const(&mut pj, &d);
+        let mut p = Ge::default();
+        p.set_gej_var(&pj);
+        p.x.normalize();
+        p.y.normalize();
+        let pk_parity_odd = p.y.is_odd();
+        let pubkey_xonly = ge_to_xonly(&p);
+        Some(Keypair {
+            seckey: *seckey32,
+            pubkey_xonly,
+            pk_parity_odd,
+        })
     }
 
-    let pk = ge_to_xonly(&p_ge);
+    /// X-only pubkey (32 bytes) from this keypair.
+    #[inline]
+    pub fn xonly_pubkey(&self) -> [u8; 32] {
+        self.pubkey_xonly
+    }
+}
+
+/// BIP 340 Schnorr sign using a precomputed [`Keypair`]. Per-call cost is **one** CT
+/// `k*G` (the nonce point) plus hashing, mirroring libsecp's keypair-based sign loop.
+///
+/// Constant-time w.r.t. the secret key inside `keypair`.
+pub fn schnorr_sign_with_keypair(
+    keypair: &Keypair,
+    msg: &[u8],
+    aux_rand32: &[u8; 32],
+) -> Option<[u8; 64]> {
+    let mut d = Scalar::zero();
+    if d.set_b32(&keypair.seckey) {
+        return None;
+    }
+    if d.is_zero() {
+        return None;
+    }
+    schnorr_sign_inner(
+        &keypair.seckey,
+        &d,
+        keypair.pk_parity_odd,
+        &keypair.pubkey_xonly,
+        msg,
+        aux_rand32,
+    )
+}
+
+#[inline]
+fn schnorr_sign_inner(
+    seckey: &[u8; 32],
+    d: &Scalar,
+    pk_parity_odd: bool,
+    pk: &[u8; 32],
+    msg: &[u8],
+    aux_rand32: &[u8; 32],
+) -> Option<[u8; 64]> {
+    let mut d_adj = *d;
+    if pk_parity_odd {
+        d_adj.negate(d);
+    }
 
     let aux_hash = tagged_hash_from_midstate(aux_midstate(), aux_rand32);
     let mut masked_key = [0u8; 32];
@@ -513,7 +603,7 @@ pub fn schnorr_sign(seckey: &[u8; 32], msg: &[u8], aux_rand32: &[u8; 32]) -> Opt
     let k_hash = {
         let mut h = nonce_midstate().clone();
         h.update(masked_key);
-        h.update(pk);
+        h.update(*pk);
         h.update(msg);
         let result: [u8; 32] = h.finalize().into();
         result
@@ -527,21 +617,23 @@ pub fn schnorr_sign(seckey: &[u8; 32], msg: &[u8], aux_rand32: &[u8; 32]) -> Opt
         return None;
     }
 
-    // Single ecmult_gen for nonce point R = k*G
+    // Single constant-time ecmult for nonce point R = k*G
     let mut rj = Gej::default();
-    ecmult::ecmult_gen(&mut rj, &k);
+    ecmult_gen_const(&mut rj, &k);
     let mut r_ge = Ge::default();
     r_ge.set_gej_var(&rj);
     r_ge.x.normalize();
     r_ge.y.normalize();
 
-    if r_ge.y.is_odd() {
-        let k_copy = k;
-        k.negate(&k_copy);
-        let ry = r_ge.y;
-        r_ge.y.negate(&ry, 1);
-        r_ge.y.normalize();
-    }
+    // Branchless: negate k and r.y if r.y is odd (BIP340 requires even-y nonce point).
+    // Checking/branching on r_ge.y.is_odd() would leak nonce-dependent timing.
+    let parity = r_ge.y.is_odd() as i32;
+    k.cond_negate(parity);
+    let mut neg_ry = FieldElement::zero();
+    neg_ry.negate(&r_ge.y, 1);
+    neg_ry.normalize();
+    r_ge.y.normalize();
+    r_ge.y.cmov(&neg_ry, Choice::from(parity as u8));
 
     let mut r_bytes = [0u8; 32];
     r_ge.x.get_b32(&mut r_bytes);
@@ -549,7 +641,7 @@ pub fn schnorr_sign(seckey: &[u8; 32], msg: &[u8], aux_rand32: &[u8; 32]) -> Opt
     let e_hash = {
         let mut h = challenge_midstate().clone();
         h.update(r_bytes);
-        h.update(pk);
+        h.update(*pk);
         h.update(msg);
         let result: [u8; 32] = h.finalize().into();
         result

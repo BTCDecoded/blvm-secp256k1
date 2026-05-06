@@ -1,6 +1,7 @@
 /target/
 # Library crate: lockfile not committed
 Cargo.lock
+# Local-only harnesses (not shipped in this repo)
 scripts/
 benches/
 .cargo/

@@ -4,9 +4,12 @@
 //! - Tagged hashes (TapTweak, TapLeaf, TapBranch)
 //! - x-only pubkey tweak (internal key + merkle root → output key)
 //! - pubkey_combine for OP_CHECKSIGADD and multi-key scripts
+//!
+//! **Timing:** `t*G` in `xonly_pubkey_tweak_add` uses constant-time `ecmult_gen_const` so the
+//! tweak scalar does not go through the fast variable-time generator ladder.
 
 use crate::ecdsa::{ge_from_compressed, ge_to_compressed};
-use crate::ecmult;
+use crate::ecmult_gen_const;
 use crate::group::{Ge, Gej};
 use crate::scalar::Scalar;
 use crate::schnorr::{lift_x, tagged_hash};
@@ -101,7 +104,7 @@ pub fn xonly_pubkey_tweak_add(xonly: &[u8; 32], tweak: &[u8; 32]) -> Option<([u8
     }
 
     let mut tj = Gej::default();
-    ecmult::ecmult_gen(&mut tj, &t);
+    ecmult_gen_const(&mut tj, &t);
     let mut pj = Gej::default();
     pj.set_ge(&p);
     let pj_old = pj;

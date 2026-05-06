@@ -2,8 +2,14 @@
 //!
 //! Verify and sign (r,s) against message hash.
 //! Low-S enforcement; compact (64-byte) and DER parsing.
+//!
+//! **Timing:** `ecdsa_sig_sign` / `ecdsa_sig_sign_recoverable` and `pubkey_from_secret` use
+//! constant-time scalar ops for the secret (see crate root `TIMING.md`). Verify, batch verify,
+//! and `ecdsa_sig_recover` use variable-time math on public signature data.
 
 use crate::ecmult;
+use crate::ecmult_gen_const;
+use crate::rfc6979::nonce32_rfc6979_libsecp;
 use crate::field::FieldElement;
 use crate::group::{generator_g, Ge, Gej};
 use crate::scalar::Scalar;
@@ -729,7 +735,7 @@ pub fn ge_from_pubkey_bytes(bytes: &[u8]) -> Option<Ge> {
 /// Derive public key from secret. Returns affine point G * secret.
 pub fn pubkey_from_secret(secret: &Scalar) -> Ge {
     let mut rj = Gej::default();
-    ecmult::ecmult_gen(&mut rj, secret);
+    ecmult_gen_const(&mut rj, secret);
     let mut r = Ge::default();
     r.set_gej_var(&rj);
     r
@@ -792,7 +798,7 @@ pub fn ecdsa_sig_sign_recoverable(
     nonce: &Scalar,
 ) -> Option<(Scalar, Scalar, u8)> {
     let mut rp = Gej::default();
-    ecmult::ecmult_gen(&mut rp, nonce);
+    ecmult_gen_const(&mut rp, nonce);
     let mut r_ge = Ge::default();
     r_ge.set_gej_var(&rp);
     r_ge.x.normalize();
@@ -812,7 +818,7 @@ pub fn ecdsa_sig_sign_recoverable(
     n.add(&n_mul, message);
 
     let mut sigs = Scalar::zero();
-    sigs.inv_var(nonce);
+    sigs.inv(nonce);
     let inv = sigs;
     sigs.mul(&inv, &n);
 
@@ -837,7 +843,7 @@ pub fn ecdsa_sig_sign(
     nonce: &Scalar,
 ) -> Option<(Scalar, Scalar)> {
     let mut rp = Gej::default();
-    ecmult::ecmult_gen(&mut rp, nonce);
+    ecmult_gen_const(&mut rp, nonce);
     let mut r_ge = Ge::default();
     r_ge.set_gej_var(&rp);
     r_ge.x.normalize();
@@ -857,7 +863,7 @@ pub fn ecdsa_sig_sign(
     n.add(&n_mul, message);
 
     let mut sigs = Scalar::zero();
-    sigs.inv_var(nonce);
+    sigs.inv(nonce);
     let inv = sigs;
     sigs.mul(&inv, &n);
 
@@ -868,6 +874,39 @@ pub fn ecdsa_sig_sign(
         return None;
     }
     Some((sigr, sigs))
+}
+
+/// ECDSA sign with **libsecp-compatible** default nonce: RFC 6979 (HMAC-SHA256), key material
+/// `seckey32 || msg_reduced32` (message reduced mod **n** as in `secp256k1_ecdsa_sign`), retry
+/// counter on invalid nonce or failed sign — same structure as `secp256k1_ecdsa_sign_inner`.
+/// Returns DER-encoded signature (minimal encoding). `None` if secret key invalid or signing
+/// does not succeed within an iteration budget.
+pub fn ecdsa_sign_der_rfc6979(msg32: &[u8; 32], seckey32: &[u8; 32]) -> Option<Vec<u8>> {
+    let mut sec = Scalar::zero();
+    if sec.set_b32(seckey32) || sec.is_zero() {
+        return None;
+    }
+    let mut msg = Scalar::zero();
+    let _ = msg.set_b32(msg32);
+    let mut msgmod = [0u8; 32];
+    msg.get_b32(&mut msgmod);
+
+    let mut keydata = [0u8; 64];
+    keydata[..32].copy_from_slice(seckey32);
+    keydata[32..].copy_from_slice(&msgmod);
+
+    const MAX_TRIES: u32 = 10_000;
+    for count in 0..MAX_TRIES {
+        let nonce32 = nonce32_rfc6979_libsecp(&keydata, count);
+        let mut non = Scalar::zero();
+        if non.set_b32(&nonce32) || non.is_zero() {
+            continue;
+        }
+        if let Some((r, s)) = ecdsa_sig_sign(&sec, &msg, &non) {
+            return Some(ecdsa_sig_serialize_der(&r, &s));
+        }
+    }
+    None
 }
 
 /// Verify ECDSA signature directly from DER bytes, pubkey bytes, and message hash.

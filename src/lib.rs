@@ -13,6 +13,10 @@
 pub mod ecdh;
 pub mod ecdsa;
 pub mod ecmult;
+mod ecmult_const;
+mod ecmult_gen_comb;
+pub use ecmult_const::ecmult_const;
+pub use ecmult_gen_comb::{ecmult_gen_const_comb as ecmult_gen_const, precompute as ecmult_gen_precompute};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub mod ellswift;
 pub mod field;
@@ -20,6 +24,7 @@ pub mod group;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) mod modinv64;
 pub mod musig;
+mod rfc6979;
 pub mod scalar;
 pub mod schnorr;
 pub mod schnorr_half_agg;

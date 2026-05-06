@@ -1,7 +1,8 @@
 //! BIP 340 Schnorr sign/verify tests.
 
 use blvm_secp256k1::schnorr::{
-    schnorr_sign, schnorr_verify, schnorr_verify_batch, xonly_pubkey_from_secret,
+    schnorr_sign, schnorr_sign_with_keypair, schnorr_verify, schnorr_verify_batch,
+    xonly_pubkey_from_secret, Keypair,
 };
 
 fn hex32(s: &str) -> [u8; 32] {
@@ -113,6 +114,40 @@ fn test_schnorr_sign_verify_roundtrip() {
     let pk = xonly_pubkey_from_secret(&seckey).unwrap();
     let sig = schnorr_sign(&seckey, msg, &aux).unwrap();
     assert!(schnorr_verify(&sig, msg, &pk));
+}
+
+/// Keypair-style sign with cached pubkey must produce a byte-identical signature to the
+/// from-scratch entry point (both go through `schnorr_sign_inner`). Test on multiple keys
+/// so we cover both even-y and odd-y `d*G` parities.
+#[test]
+fn test_schnorr_sign_with_keypair_matches_schnorr_sign() {
+    let test_cases: &[(&str, &[u8])] = &[
+        // Vector with seckey leading to even-y pubkey.
+        (
+            "B7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF",
+            b"keypair parity test even",
+        ),
+        // Vector with seckey 0x...0003 leading to odd-y pubkey (d_adj = -d).
+        (
+            "0000000000000000000000000000000000000000000000000000000000000003",
+            b"keypair parity test odd",
+        ),
+    ];
+    let aux = hex32("0000000000000000000000000000000000000000000000000000000000000001");
+    for (seckey_hex, msg) in test_cases {
+        let seckey = hex32(seckey_hex);
+        let pk = xonly_pubkey_from_secret(&seckey).unwrap();
+        let keypair = Keypair::from_seckey(&seckey).expect("from_seckey");
+        assert_eq!(keypair.xonly_pubkey(), pk);
+
+        let from_seckey = schnorr_sign(&seckey, msg, &aux).unwrap();
+        let from_keypair = schnorr_sign_with_keypair(&keypair, msg, &aux).unwrap();
+        assert_eq!(
+            from_seckey, from_keypair,
+            "schnorr_sign_with_keypair must match schnorr_sign byte-for-byte (seckey={seckey_hex})"
+        );
+        assert!(schnorr_verify(&from_keypair, msg, &pk));
+    }
 }
 
 #[test]

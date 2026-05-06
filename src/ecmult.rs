@@ -2,6 +2,10 @@
 //!
 //! Strauss WNAF with endomorphism optimization.
 //! Precomputed tables for G and 2^128*G.
+//!
+//! **Timing:** [`ecmult`] and [`ecmult_gen`] are optimized for public-data workloads (variable
+//! WNAF, table lookup). For secret scalars, use the crate’s [`ecmult_const`](crate::ecmult_const)
+//! and [`ecmult_gen_const`](crate::ecmult_gen_const) entry points instead.
 
 use crate::field::FieldElement;
 use crate::group::{ge_table_set_globalz, generator_g, Ge, GeStorage, Gej};
@@ -41,7 +45,7 @@ use precomputed::{PRE_G, PRE_G_128};
 
 /// Fill pre_a with odd multiples [1*a, 3*a, ..., (2*n-1)*a]. zr gets z-ratios, z gets final z.
 #[inline(always)]
-fn ecmult_odd_multiples_table(
+pub(crate) fn ecmult_odd_multiples_table(
     n: usize,
     pre_a: &mut [Ge],
     zr: &mut [FieldElement],

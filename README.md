@@ -15,6 +15,18 @@ Precomputed ecmult tables are committed in `src/ecmult_precomputed.rs` (no build
 - **Pure Rust + ASM** — Field and scalar assembly for ARM32 and x86_64 where it matters; no C dependencies at runtime.
 - **Parity with libsecp256k1** — ECDSA, Schnorr (BIP 340), MuSig2, ElligatorSwift (BIP 324), ECDH, Taproot.
 
+## Side-channel and timing (constant-time) contract
+
+Operations that use **private keys, nonces, or ECDH/MuSig secrets** are implemented with constant-time primitives on supported targets, aligned with [libsecp256k1](https://github.com/bitcoin-core/secp256k1) for comparable entry points. **Verification**, batch verify, and parsing paths may use faster variable-time math on public data only.
+
+- **CT-required (secret inputs):** signing (`ecdsa_sig_sign*`, `schnorr_sign`), public key from secret, ECDH, ElligatorSwift `ellswift_xdh`, MuSig nonce generation / tweaks that multiply by a secret scalar, Taproot x-only tweak (`t*G`).
+
+- **Var-time allowed (public inputs):** `ecdsa_sig_verify`, `schnorr_verify*`, `ecmult` / `ecmult_gen` / `ecmult_multi` when used only with public points and scalars from signatures or hashes.
+
+- **Unsafe use:** never feed **secret** scalars into APIs documented as public-data / variable-time, or use this crate on architectures where `Scalar::inv` is not the constant-time path (see `Scalar::inv` in the `scalar` module).
+
+The full **API matrix** and notes live in [TIMING.md](./TIMING.md) in this crate.
+
 ## Installation
 
 ```toml

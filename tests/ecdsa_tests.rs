@@ -2,8 +2,8 @@
 
 use blvm_secp256k1::ecdsa::{
     ecdsa_sig_normalize, ecdsa_sig_parse_der, ecdsa_sig_parse_der_lax, ecdsa_sig_serialize_der,
-    ecdsa_sig_sign, ecdsa_sig_verify, ecdsa_sig_verify_exhaustive, ge_from_compressed,
-    ge_to_compressed, pubkey_from_secret,
+    ecdsa_sig_sign, ecdsa_sig_verify, ecdsa_sig_verify_exhaustive, ecdsa_sign_der_rfc6979,
+    ge_from_compressed, ge_to_compressed, pubkey_from_secret, verify_ecdsa_direct,
 };
 use blvm_secp256k1::ecmult;
 use blvm_secp256k1::group::{generator_g, Gej};
@@ -14,6 +14,21 @@ fn scalar_from_b32(b: &[u8; 32]) -> Scalar {
     let mut s = Scalar::zero();
     s.set_b32(b);
     s
+}
+
+#[test]
+fn test_ecdsa_sign_der_rfc6979_verify() {
+    let mut seckey_bytes = [0u8; 32];
+    seckey_bytes[31] = 1;
+    let mut msg_bytes = [0u8; 32];
+    msg_bytes[31] = 2;
+
+    let der = ecdsa_sign_der_rfc6979(&msg_bytes, &seckey_bytes).expect("rfc6979 sign");
+    let pk = ge_to_compressed(&pubkey_from_secret(&scalar_from_b32(&seckey_bytes)));
+    assert!(
+        verify_ecdsa_direct(&der, &pk, &msg_bytes, true, true).unwrap_or(false),
+        "DER verify after ecdsa_sign_der_rfc6979"
+    );
 }
 
 #[test]

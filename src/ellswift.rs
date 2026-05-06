@@ -10,7 +10,7 @@ mod imp {
     use sha2::{Digest, Sha256};
 
     use crate::ecdsa::{ge_from_compressed, pubkey_from_secret};
-    use crate::ecmult;
+    use crate::ecmult_const;
     use crate::field::FieldElement;
     use crate::group::{Ge, Gej};
     use crate::scalar::Scalar;
@@ -404,7 +404,7 @@ mod imp {
 
     /// X-only ECDH using ElligatorSwift. party: false = A, true = B.
     /// seckey must correspond to our ell encoding (ell_a64 if party false, ell_b64 if true).
-    /// Uses variable-time ecmult (ecmult_const would be constant-time).
+    /// Multiplication by `seckey` uses constant-time `ecmult_const`.
     pub fn ellswift_xdh(
         ell_a64: &[u8; 64],
         ell_b64: &[u8; 64],
@@ -434,10 +434,8 @@ mod imp {
         if seckey_scalar.is_zero() {
             return None;
         }
-        let mut ptj = Gej::default();
-        ptj.set_ge(&pt);
         let mut res = Gej::default();
-        ecmult::ecmult(&mut res, &ptj, &seckey_scalar, None);
+        ecmult_const(&mut res, &pt, &seckey_scalar);
         let mut res_ge = Ge::default();
         res_ge.set_gej_var(&res);
         if res_ge.infinity {

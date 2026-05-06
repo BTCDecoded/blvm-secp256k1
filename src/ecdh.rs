@@ -3,11 +3,10 @@
 //! Computes shared_point = pubkey * seckey, then hashes (x,y) to output.
 //! Uses SHA256(0x02|0x03 || x32) as default (compressed point hash).
 //!
-//! Note: Uses variable-time ecmult. For constant-time (side-channel resistant)
-//! use, ecmult_const would be required.
+//! **Timing:** `seckey` is multiplied with constant-time `ecmult_const` (libsecp256k1-style).
 
 use crate::ecdsa::ge_from_compressed;
-use crate::ecmult;
+use crate::ecmult_const;
 use crate::group::{Ge, Gej};
 use crate::scalar::Scalar;
 use sha2::{Digest, Sha256};
@@ -35,7 +34,7 @@ pub fn ecdh(pubkey: &Ge, seckey: &Scalar) -> Option<[u8; 32]> {
     let mut pubkeyj = Gej::default();
     pubkeyj.set_ge(pubkey);
     let mut res = Gej::default();
-    ecmult::ecmult(&mut res, &pubkeyj, seckey, None);
+    ecmult_const(&mut res, pubkey, seckey);
     let mut pt = Ge::default();
     pt.set_gej_var(&res);
     if pt.infinity {

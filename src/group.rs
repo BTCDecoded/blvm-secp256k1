@@ -523,6 +523,93 @@ impl Gej {
         r.mul(&z2, x);
         FieldElement::fe_equal(&r, &self.x)
     }
+
+    /// Jacobian double (libsecp256k1 `gej_double`): same formula for all inputs; no early return.
+    /// Used on secret-dependent paths with `ecmult_const`.
+    pub fn double_ct(&mut self, a: &Gej) {
+        let mut l = FieldElement::zero();
+        let mut s = FieldElement::zero();
+        let mut t = FieldElement::zero();
+        self.infinity = a.infinity;
+        self.z.mul(&a.z, &a.y);
+        s.sqr(&a.y);
+        l.sqr(&a.x);
+        l.mul_int(3);
+        l.half();
+        t.negate(&s, 1);
+        let t_in = t;
+        t.mul(&t_in, &a.x);
+        self.x.sqr(&l);
+        self.x.add_assign(&t);
+        self.x.add_assign(&t);
+        let s_in = s;
+        s.sqr(&s_in);
+        t.add_assign(&self.x);
+        self.y.mul(&t, &l);
+        self.y.add_assign(&s);
+        let y_in = self.y;
+        self.y.negate(&y_in, 2);
+        self.infinity = a.infinity;
+    }
+
+    /// Mixed add (libsecp256k1 `gej_add_ge`): Brier–Joye unified formula, constant-time.
+    /// `b` must not be infinity.
+    pub fn add_ge(&mut self, a: &Gej, b: &Ge) {
+        debug_assert!(!b.infinity);
+        let mut zz = FieldElement::zero();
+        zz.sqr(&a.z);
+        let u1 = a.x;
+        let mut u2 = FieldElement::zero();
+        u2.mul(&b.x, &zz);
+        let s1 = a.y;
+        let mut s2 = FieldElement::zero();
+        let mut rr = FieldElement::zero();
+        let mut m_alt = FieldElement::zero();
+        let mut tt = FieldElement::zero();
+        s2.mul(&b.y, &zz);
+        let s2_in = s2;
+        s2.mul(&s2_in, &a.z);
+        let mut t = u1;
+        t.add_assign(&u2);
+        let mut m = s1;
+        m.add_assign(&s2);
+        rr.sqr(&t);
+        m_alt.negate(&u2, 1);
+        tt.mul(&u1, &m_alt);
+        rr.add_assign(&tt);
+        let degenerate = m.normalizes_to_zero();
+        let mut rr_alt = s1;
+        rr_alt.mul_int(2);
+        m_alt.add_assign(&u1);
+        let not_deg = !degenerate as u8;
+        rr_alt.cmov(&rr, Choice::from(not_deg));
+        m_alt.cmov(&m, Choice::from(not_deg));
+        let mut n = FieldElement::zero();
+        n.sqr(&m_alt);
+        let mut q = FieldElement::zero();
+        q.negate(&t, 5);
+        let q0 = q;
+        q.mul(&q0, &n);
+        n.sqr_assign();
+        n.cmov(&m, Choice::from(degenerate as u8));
+        t.sqr(&rr_alt);
+        self.z.mul(&a.z, &m_alt);
+        t.add_assign(&q);
+        self.x = t;
+        t.mul_int(2);
+        t.add_assign(&q);
+        let t0 = t;
+        t.mul(&t0, &rr_alt);
+        t.add_assign(&n);
+        self.y.negate(&t, 5);
+        self.y.half();
+        self.x.cmov(&b.x, Choice::from(a.infinity as u8));
+        self.y.cmov(&b.y, Choice::from(a.infinity as u8));
+        let mut one = FieldElement::zero();
+        one.set_int(1);
+        self.z.cmov(&one, Choice::from(a.infinity as u8));
+        self.infinity = self.z.normalizes_to_zero();
+    }
 }
 
 /// Batch convert Gej -> Ge using one field inversion instead of N.

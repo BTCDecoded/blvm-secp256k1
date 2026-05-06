@@ -1,6 +1,9 @@
 //! Scalar arithmetic modulo the secp256k1 group order n.
 //!
 //! n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+//!
+//! **Timing:** [`Scalar::inv`] is constant-time on `x86_64` and `aarch64` (modular inverse),
+//! and falls back to Fermat on other targets. [`Scalar::inv_var`] is the same as [`inv`](Scalar::inv).
 
 #[cfg(target_arch = "x86_64")]
 mod scalar_asm {
@@ -138,8 +141,7 @@ impl Scalar {
     }
 
     /// True if scalar is odd (d[0] & 1).
-    #[allow(dead_code)]
-    fn is_odd(&self) -> bool {
+    pub fn is_odd(&self) -> bool {
         self.d[0] & 1 != 0
     }
 
@@ -188,13 +190,38 @@ impl Scalar {
     }
 
     /// div2(M, x): x/2 mod n when x even, (x+n)/2 mod n when x odd.
-    #[allow(dead_code)]
-    fn div2(&mut self) {
-        if self.is_odd() {
-            self.half_add_n();
-        } else {
-            self.half();
-        }
+    ///
+    /// Constant-time: no branch on the scalar's parity bit. Builds a mask from
+    /// the low bit and adds `N * mask` before shifting, so both halves of the
+    /// original `if/else` execute in the same instruction stream.
+    pub fn div2(&mut self) {
+        // add_mask = u64::MAX when odd, 0 when even — no branch.
+        let add_mask = 0u64.wrapping_sub(self.d[0] & 1);
+        let mut t: u128 = self.d[0] as u128 + (N_0 & add_mask) as u128;
+        let c0 = t as u64;
+        t >>= 64;
+        t += self.d[1] as u128 + (N_1 & add_mask) as u128;
+        let c1 = t as u64;
+        t >>= 64;
+        t += self.d[2] as u128 + (N_2 & add_mask) as u128;
+        let c2 = t as u64;
+        t >>= 64;
+        t += self.d[3] as u128 + (N_3 & add_mask) as u128;
+        let c3 = t as u64;
+        let c4 = (t >> 64) as u64;
+        self.d[0] = (c0 >> 1) | (c1 << 63);
+        self.d[1] = (c1 >> 1) | (c2 << 63);
+        self.d[2] = (c2 >> 1) | (c3 << 63);
+        self.d[3] = (c3 >> 1) | (c4 << 63);
+        // For any valid scalar in [0, N-1] the result is already < N; reduce is a no-op
+        // (overflow = 0) but kept as a safety net — reduce(0) touches no data.
+        self.reduce(self.check_overflow() as u64);
+    }
+
+    /// r = a/2 (mod n). Same as libsecp256k1 `scalar_half` (used by `ecmult_const`).
+    pub fn half_modn(&mut self, a: &Scalar) {
+        *self = *a;
+        self.div2();
     }
 
     /// tmp = a + b (full 257-bit add, no reduction). Used when both are odd and we need (a+b)/2.
@@ -252,7 +279,9 @@ impl Scalar {
     }
 
     pub fn negate(&mut self, a: &Scalar) {
-        let nonzero = if a.is_zero() { 0u64 } else { u64::MAX };
+        // Branchless mask: u64::MAX iff a != 0 (negate is a no-op on zero in mod-n sense).
+        let nz = a.d[0] | a.d[1] | a.d[2] | a.d[3];
+        let nonzero = 0u64.wrapping_sub((nz != 0) as u64);
         let mut t: u128 = (!a.d[0]) as u128 + (N_0 + 1) as u128;
         self.d[0] = (t as u64) & nonzero;
         t >>= 64;
@@ -369,9 +398,10 @@ impl Scalar {
         r2.d[3] = 0;
     }
 
-    /// Modular inverse. Variable-time. r = a^(-1) mod n. If a is zero, r is zero.
-    /// On x86_64/aarch64: modinv64 (safegcd). Else: Fermat via num-bigint modpow.
-    pub fn inv_var(&mut self, a: &Scalar) {
+    /// Modular inverse r = a^(-1) (mod n). If a is zero, r is zero.
+    /// On `x86_64` and `aarch64` this uses the same safegcd / `modinv64` path as libsecp256k1.
+    /// On other targets it falls back to Fermat; treat those targets as not secret-safe for timing.
+    pub fn inv(&mut self, a: &Scalar) {
         if a.is_zero() {
             *self = Scalar::zero();
             return;
@@ -393,6 +423,11 @@ impl Scalar {
         }
     }
 
+    /// Backwards compatibility: same as [`Self::inv`].
+    pub fn inv_var(&mut self, a: &Scalar) {
+        self.inv(a);
+    }
+
     /// True if scalar is in the upper half [n/2, n).
     pub fn is_high(&self) -> bool {
         let mut yes = 0u64;
@@ -407,9 +442,13 @@ impl Scalar {
     }
 
     /// Conditionally negate: if flag != 0, negate in place. Returns 1 if negated, -1 if not.
+    ///
+    /// Constant-time: mask and nonzero are constructed without branches; the
+    /// return value is computed via branchless sign-extension of the mask's MSB.
     pub fn cond_negate(&mut self, flag: i32) -> i32 {
-        let mask = if flag != 0 { u64::MAX } else { 0 };
-        let nonzero = if self.is_zero() { 0 } else { u64::MAX };
+        // Build masks without branches.
+        let mask = 0u64.wrapping_sub((flag != 0) as u64); // 0 or u64::MAX
+        let nonzero = 0u64.wrapping_sub((!self.is_zero()) as u64); // 0 or u64::MAX
         let mut t: u128 = (self.d[0] ^ mask) as u128;
         t += ((N_0 + 1) & mask) as u128;
         self.d[0] = (t as u64) & nonzero;
@@ -425,11 +464,10 @@ impl Scalar {
         t += (self.d[3] ^ mask) as u128;
         t += (N_3 & mask) as u128;
         self.d[3] = (t as u64) & nonzero;
-        if mask == 0 {
-            -1
-        } else {
-            1
-        }
+        // Return 1 if negated, -1 if not — branchless via mask MSB.
+        // mask=0   → (0>>63)=0  → 0*2-1 = -1
+        // mask=MAX → (MAX>>63)=1 → 1*2-1 =  1
+        ((mask >> 63) as i32) * 2 - 1
     }
 }
 
