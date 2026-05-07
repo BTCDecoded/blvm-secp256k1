@@ -16,9 +16,15 @@ path = "src/lib.rs"
 
 [dependencies]
 subtle = "2.5"
-sha2 = { version = "0.10", features = ["asm"] }
 num-bigint = "0.4"
 num-integer = "0.1"
+
+# sha2-asm doesn't support Windows; split by target to avoid it there
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+sha2 = { version = "0.10", features = ["asm"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+sha2 = { version = "0.10" }
 
 [build-dependencies]
 cc = "1.0"
