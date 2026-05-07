@@ -34,19 +34,21 @@
 //!
 //! **ASM inspection:** `RUSTFLAGS='--emit=asm' cargo rustc --release --lib`, then search `target/release/deps/*.s` for hot symbols (see `TIMING.md`).
 
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-use blvm_secp256k1::ellswift::{ellswift_create, ellswift_xdh};
 use blvm_secp256k1::ecdh;
 use blvm_secp256k1::ecdsa::{
     ecdsa_sig_sign, ecdsa_sig_sign_recoverable, ecdsa_sign_der_rfc6979, ge_from_compressed,
     ge_to_compressed, pubkey_from_secret,
 };
-use blvm_secp256k1::musig::{nonce_agg, nonce_gen, nonce_process, partial_sign, KeyAggCache, Session};
+use blvm_secp256k1::ecmult_gen_const;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use blvm_secp256k1::ellswift::{ellswift_create, ellswift_xdh};
+use blvm_secp256k1::group::Gej;
+use blvm_secp256k1::musig::{
+    nonce_agg, nonce_gen, nonce_process, partial_sign, KeyAggCache, Session,
+};
+use blvm_secp256k1::scalar::Scalar;
 use blvm_secp256k1::schnorr::{schnorr_sign, xonly_pubkey_from_secret};
 use blvm_secp256k1::taproot::{taproot_output_key, xonly_pubkey_tweak_add};
-use blvm_secp256k1::ecmult_gen_const;
-use blvm_secp256k1::group::Gej;
-use blvm_secp256k1::scalar::Scalar;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -98,7 +100,10 @@ fn ct_cond_negate_correctness() {
         // flag = 0: no change
         let mut r0 = s;
         let ret0 = r0.cond_negate(0);
-        assert!(scalar_eq(&r0, &s), "cond_negate(0) changed scalar for i={i}");
+        assert!(
+            scalar_eq(&r0, &s),
+            "cond_negate(0) changed scalar for i={i}"
+        );
         assert_eq!(ret0, -1, "cond_negate(0) return value wrong");
 
         // flag = 1: should equal negate
@@ -106,7 +111,10 @@ fn ct_cond_negate_correctness() {
         let ret1 = r1.cond_negate(1);
         let mut expected_neg = Scalar::zero();
         expected_neg.negate(&s);
-        assert!(scalar_eq(&r1, &expected_neg), "cond_negate(1) != negate for i={i}");
+        assert!(
+            scalar_eq(&r1, &expected_neg),
+            "cond_negate(1) != negate for i={i}"
+        );
         assert_eq!(ret1, 1, "cond_negate(1) return value wrong");
     }
 }
@@ -163,8 +171,14 @@ fn ct_schnorr_r_parity_correctness() {
         }
     }
     // Sanity: both parities were exercised.
-    assert!(verified_odd > 0, "no odd-parity R generated — test not exercising both paths");
-    assert!(verified_even > 0, "no even-parity R generated — test not exercising both paths");
+    assert!(
+        verified_odd > 0,
+        "no odd-parity R generated — test not exercising both paths"
+    );
+    assert!(
+        verified_even > 0,
+        "no even-parity R generated — test not exercising both paths"
+    );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -209,7 +223,9 @@ fn welch_t(a: &[i64], b: &[i64]) -> f64 {
     let var_a = a.iter().map(|&x| (x as f64 - mean_a).powi(2)).sum::<f64>() / (n_a - 1.0);
     let var_b = b.iter().map(|&x| (x as f64 - mean_b).powi(2)).sum::<f64>() / (n_b - 1.0);
     let se = (var_a / n_a + var_b / n_b).sqrt();
-    if se < f64::EPSILON { return 0.0; }
+    if se < f64::EPSILON {
+        return 0.0;
+    }
     (mean_a - mean_b) / se
 }
 
@@ -222,12 +238,7 @@ fn trim(samples: &mut Vec<i64>, pct: f64) {
 
 const THRESHOLD: f64 = 4.5;
 
-fn dudect<I, F: Fn(&I)>(
-    inputs0: &[I],
-    inputs1: &[I],
-    n_each: usize,
-    f: &F,
-) -> (f64, f64, f64) {
+fn dudect<I, F: Fn(&I)>(inputs0: &[I], inputs1: &[I], n_each: usize, f: &F) -> (f64, f64, f64) {
     let mut times0: Vec<i64> = Vec::with_capacity(n_each);
     let mut times1: Vec<i64> = Vec::with_capacity(n_each);
 
@@ -240,21 +251,26 @@ fn dudect<I, F: Fn(&I)>(
     // LCG for random interleaving (no external deps).
     let mut rng: u64 = 0xdeadbeef_cafebabe;
     let lcg = |s: &mut u64| -> u64 {
-        *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         *s
     };
 
     let mut i0 = 0usize;
     let mut i1 = 0usize;
     while times0.len() < n_each || times1.len() < n_each {
-        let use_class0 = times0.len() < n_each && (times1.len() >= n_each || lcg(&mut rng) & 1 == 0);
+        let use_class0 =
+            times0.len() < n_each && (times1.len() >= n_each || lcg(&mut rng) & 1 == 0);
         if use_class0 {
             let inp = &inputs0[i0 % inputs0.len()];
             let t0 = read_cycles_start();
             f(std::hint::black_box(inp));
             let t1 = read_cycles_end();
             let d = (t1 as i64).saturating_sub(t0 as i64);
-            if d > 0 { times0.push(d); }
+            if d > 0 {
+                times0.push(d);
+            }
             i0 += 1;
         } else if times1.len() < n_each {
             let inp = &inputs1[i1 % inputs1.len()];
@@ -262,7 +278,9 @@ fn dudect<I, F: Fn(&I)>(
             f(std::hint::black_box(inp));
             let t1 = read_cycles_end();
             let d = (t1 as i64).saturating_sub(t0 as i64);
-            if d > 0 { times1.push(d); }
+            if d > 0 {
+                times1.push(d);
+            }
             i1 += 1;
         }
     }
@@ -310,7 +328,9 @@ fn ct_timing_div2_even_vs_odd() {
         .filter_map(|i| {
             let h: [u8; 32] = Sha256::digest(i.to_le_bytes()).into();
             let mut s = Scalar::zero();
-            if s.set_b32(&h) || s.is_zero() || s.is_odd() { return None; }
+            if s.set_b32(&h) || s.is_zero() || s.is_odd() {
+                return None;
+            }
             Some(s)
         })
         .take(N)
@@ -319,7 +339,9 @@ fn ct_timing_div2_even_vs_odd() {
         .filter_map(|i| {
             let h: [u8; 32] = Sha256::digest((i | 0x8000_0000_0000_0000u64).to_le_bytes()).into();
             let mut s = Scalar::zero();
-            if s.set_b32(&h) || s.is_zero() || !s.is_odd() { return None; }
+            if s.set_b32(&h) || s.is_zero() || !s.is_odd() {
+                return None;
+            }
             Some(s)
         })
         .take(N)
@@ -345,7 +367,9 @@ fn ct_timing_cond_negate_flag0_vs_flag1() {
     let class1: Vec<(Scalar, i32)> = (0..N).map(|_| (base, 1)).collect();
 
     let (t, m0, m1) = dudect(&class0, &class1, N, &|(s, f): &(Scalar, i32)| {
-        let mut r = *s; r.cond_negate(*f); std::hint::black_box(r);
+        let mut r = *s;
+        r.cond_negate(*f);
+        std::hint::black_box(r);
     });
     println!("ct_timing_cond_negate | t={t:.2} flag0={m0:.1} flag1={m1:.1} cycles");
     assert_welch_timing_ok("ct_timing_cond_negate flag0/1", t, m0, m1);
@@ -365,10 +389,7 @@ fn ct_timing_ecmult_gen_const_two_random_pools() {
     }
 
     const N: usize = 10_000;
-    let pool_a: Vec<Scalar> = (0u64..)
-        .filter_map(hash_scalar)
-        .take(N)
-        .collect();
+    let pool_a: Vec<Scalar> = (0u64..).filter_map(hash_scalar).take(N).collect();
     let pool_b: Vec<Scalar> = (0u64..)
         .filter_map(|i| hash_scalar(i ^ 0xA5A5_A5A5_A5A5_A5A5))
         .take(N)
@@ -399,10 +420,22 @@ fn ct_timing_schnorr_sign_r_parity() {
         let h: [u8; 32] = Sha256::digest(i.to_le_bytes()).into();
         i += 1;
         let mut sk = Scalar::zero();
-        if sk.set_b32(&h) || sk.is_zero() { continue; }
-        let sig = match schnorr_sign(&h, &fixed_msg, &fixed_aux) { Some(s) => s, None => continue };
-        if sig[0] & 1 == 0 { if class0.len() < N { class0.push(h); } }
-        else { if class1.len() < N { class1.push(h); } }
+        if sk.set_b32(&h) || sk.is_zero() {
+            continue;
+        }
+        let sig = match schnorr_sign(&h, &fixed_msg, &fixed_aux) {
+            Some(s) => s,
+            None => continue,
+        };
+        if sig[0] & 1 == 0 {
+            if class0.len() < N {
+                class0.push(h);
+            }
+        } else {
+            if class1.len() < N {
+                class1.push(h);
+            }
+        }
     }
 
     let (t, m0, m1) = dudect(&class0, &class1, N, &|sk: &[u8; 32]| {
@@ -417,9 +450,9 @@ fn ct_timing_schnorr_sign_r_parity() {
 #[ignore = "needs isolated CPU; run with --include-ignored --nocapture --test-threads=1"]
 fn ct_timing_ecdh_two_random_pools() {
     const LIBSECP_ECDH_PK: [u8; 33] = [
-        0x03, 0x54, 0x94, 0xc1, 0x5d, 0x32, 0x09, 0x97, 0x06, 0xc2, 0x39, 0x5f, 0x94, 0x34,
-        0x87, 0x45, 0xfd, 0x75, 0x7c, 0xe3, 0x0e, 0x4e, 0x8c, 0x90, 0xfb, 0xa2, 0xba, 0xd1,
-        0x84, 0xf8, 0x83, 0xc6, 0x9f,
+        0x03, 0x54, 0x94, 0xc1, 0x5d, 0x32, 0x09, 0x97, 0x06, 0xc2, 0x39, 0x5f, 0x94, 0x34, 0x87,
+        0x45, 0xfd, 0x75, 0x7c, 0xe3, 0x0e, 0x4e, 0x8c, 0x90, 0xfb, 0xa2, 0xba, 0xd1, 0x84, 0xf8,
+        0x83, 0xc6, 0x9f,
     ];
     let pk = ge_from_compressed(&LIBSECP_ECDH_PK).expect("ct_ecdh: bad pk");
     fn hash_scalar(seed: u64) -> Option<Scalar> {
@@ -486,16 +519,7 @@ fn musig_nonce_ctx(seed: u64) -> Option<MusigNonceCtx> {
         return None;
     }
     let mut r = session_rand32;
-    if nonce_gen(
-        &mut r,
-        Some(&sk),
-        &pk,
-        Some(&msg),
-        Some(&cache),
-        None,
-    )
-    .is_none()
-    {
+    if nonce_gen(&mut r, Some(&sk), &pk, Some(&msg), Some(&cache), None).is_none() {
         return None;
     }
     Some(MusigNonceCtx {
@@ -537,14 +561,8 @@ fn musig_partial_ctx(seed: u64) -> Option<MusigPartialCtx> {
     if rand.iter().all(|b| *b == 0) {
         return None;
     }
-    let ((k64, pk33), pubnonce) = nonce_gen(
-        &mut rand,
-        Some(&sk),
-        &pk,
-        Some(&msg),
-        Some(&cache),
-        None,
-    )?;
+    let ((k64, pk33), pubnonce) =
+        nonce_gen(&mut rand, Some(&sk), &pk, Some(&msg), Some(&cache), None)?;
     let aggnonce = nonce_agg(std::slice::from_ref(&pubnonce))?;
     let session = nonce_process(&aggnonce, &msg, &cache)?;
     Some(MusigPartialCtx {
@@ -721,7 +739,9 @@ fn ct_timing_ecdsa_sig_sign_recoverable_two_pools() {
         let (sec, msg, nonce) = *trip;
         std::hint::black_box(ecdsa_sig_sign_recoverable(&sec, &msg, &nonce));
     });
-    println!("ct_timing_ecdsa_sig_sign_recoverable | t={t:.2} pool_a={m0:.1} pool_b={m1:.1} cycles");
+    println!(
+        "ct_timing_ecdsa_sig_sign_recoverable | t={t:.2} pool_a={m0:.1} pool_b={m1:.1} cycles"
+    );
     assert_welch_timing_ok("ct_timing_ecdsa_sig_sign_recoverable pools", t, m0, m1);
 }
 
@@ -758,12 +778,7 @@ fn ct_timing_musig_partial_sign_two_pools() {
 
     let (t, m0, m1) = dudect(&pool_a, &pool_b, N, &|ctx: &MusigPartialCtx| {
         let mut sn = ctx.secnonce_tpl.clone();
-        std::hint::black_box(partial_sign(
-            &mut sn,
-            &ctx.sk,
-            &ctx.cache,
-            &ctx.session,
-        ));
+        std::hint::black_box(partial_sign(&mut sn, &ctx.sk, &ctx.cache, &ctx.session));
     });
     println!("ct_timing_musig_partial_sign | t={t:.2} pool_a={m0:.1} pool_b={m1:.1} cycles");
     assert_welch_timing_ok("ct_timing_musig_partial_sign pools", t, m0, m1);
@@ -774,9 +789,9 @@ fn ct_timing_musig_partial_sign_two_pools() {
 #[ignore = "needs isolated CPU; run with --include-ignored --nocapture --test-threads=1"]
 fn ct_timing_xonly_pubkey_tweak_add_two_pools() {
     const INTERNAL_SK: [u8; 32] = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-        0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-        0x1d, 0x1e, 0x1f, 0x20,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+        0x1f, 0x20,
     ];
     let internal_x = xonly_pubkey_from_secret(&INTERNAL_SK).expect("tap tweak internal xonly");
 
@@ -882,9 +897,9 @@ fn ct_timing_ecdsa_sign_der_rfc6979_two_pools() {
 #[ignore = "needs isolated CPU; run with --include-ignored --nocapture --test-threads=1"]
 fn ct_timing_ecdh_compressed_two_pools() {
     const LIBSECP_ECDH_PK: [u8; 33] = [
-        0x03, 0x54, 0x94, 0xc1, 0x5d, 0x32, 0x09, 0x97, 0x06, 0xc2, 0x39, 0x5f, 0x94, 0x34,
-        0x87, 0x45, 0xfd, 0x75, 0x7c, 0xe3, 0x0e, 0x4e, 0x8c, 0x90, 0xfb, 0xa2, 0xba, 0xd1,
-        0x84, 0xf8, 0x83, 0xc6, 0x9f,
+        0x03, 0x54, 0x94, 0xc1, 0x5d, 0x32, 0x09, 0x97, 0x06, 0xc2, 0x39, 0x5f, 0x94, 0x34, 0x87,
+        0x45, 0xfd, 0x75, 0x7c, 0xe3, 0x0e, 0x4e, 0x8c, 0x90, 0xfb, 0xa2, 0xba, 0xd1, 0x84, 0xf8,
+        0x83, 0xc6, 0x9f,
     ];
     const N: usize = 5_000;
     let pool_a: Vec<[u8; 32]> = (0u64..)
@@ -972,9 +987,9 @@ fn ct_timing_musig_keyagg_ec_tweak_two_pools() {
 #[ignore = "needs isolated CPU; run with --include-ignored --nocapture --test-threads=1"]
 fn ct_timing_taproot_output_key_two_pools() {
     const INTERNAL_SK: [u8; 32] = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-        0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-        0x1d, 0x1e, 0x1f, 0x20,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+        0x1f, 0x20,
     ];
     let internal_x = xonly_pubkey_from_secret(&INTERNAL_SK).expect("taproot output key internal");
 

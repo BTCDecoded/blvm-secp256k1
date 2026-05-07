@@ -27,9 +27,7 @@ const ECMULT_K: Scalar = Scalar {
 };
 
 // 2^128 (S_OFFSET in upstream) as 4x64 little-endian scalar limbs.
-const S_OFFSET: Scalar = Scalar {
-    d: [0, 0, 1, 0],
-};
+const S_OFFSET: Scalar = Scalar { d: [0, 0, 1, 0] };
 
 #[allow(clippy::needless_range_loop)] // index drives constant-time cmove selection
 fn ecmult_const_table_get_ge(r: &mut Ge, pre: &[Ge; ECMULT_CONST_TABLE_SIZE], n: u32) {

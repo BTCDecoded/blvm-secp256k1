@@ -9,9 +9,9 @@
 
 use crate::ecmult;
 use crate::ecmult_gen_const;
-use crate::rfc6979::nonce32_rfc6979_libsecp;
 use crate::field::FieldElement;
 use crate::group::{generator_g, Ge, Gej};
+use crate::rfc6979::nonce32_rfc6979_libsecp;
 use crate::scalar::Scalar;
 use subtle::ConstantTimeEq;
 

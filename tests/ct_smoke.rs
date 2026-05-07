@@ -1,10 +1,10 @@
 //! Differential and platform smoke checks for constant-time–oriented code paths.
 //! This is not a substitute for dudect or hardware trace analysis.
 
-use blvm_secp256k1::ecdsa::{ge_from_compressed, pubkey_from_secret};
 use blvm_secp256k1::ecdh;
-use blvm_secp256k1::schnorr::{schnorr_sign, schnorr_verify};
+use blvm_secp256k1::ecdsa::{ge_from_compressed, pubkey_from_secret};
 use blvm_secp256k1::scalar::Scalar;
+use blvm_secp256k1::schnorr::{schnorr_sign, schnorr_verify};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 

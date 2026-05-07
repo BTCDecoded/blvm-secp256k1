@@ -16,7 +16,9 @@ pub mod ecmult;
 mod ecmult_const;
 mod ecmult_gen_comb;
 pub use ecmult_const::ecmult_const;
-pub use ecmult_gen_comb::{ecmult_gen_const_comb as ecmult_gen_const, precompute as ecmult_gen_precompute};
+pub use ecmult_gen_comb::{
+    ecmult_gen_const_comb as ecmult_gen_const, precompute as ecmult_gen_precompute,
+};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub mod ellswift;
 pub mod field;
