@@ -139,6 +139,7 @@ fn compute_table(gen: &Ge) -> [[GeStorage; COMB_POINTS]; COMB_BLOCKS] {
         // u = 2^(block * COMB_TEETH * COMB_SPACING) * gen/2 at this point.
         let mut sum = Gej::default();
         sum.set_infinity();
+        #[allow(clippy::needless_range_loop)]
         for tooth in 0..COMB_TEETH {
             // sum += 2^((block*COMB_TEETH + tooth) * COMB_SPACING) * gen/2
             let sum_in = sum;
@@ -160,6 +161,7 @@ fn compute_table(gen: &Ge) -> [[GeStorage; COMB_POINTS]; COMB_BLOCKS] {
         vs[vs_pos].neg(&sum);
         vs_pos += 1;
         // For each new tooth, double the table by adding ds[tooth] to existing entries.
+        #[allow(clippy::needless_range_loop)]
         for tooth in 0..(COMB_TEETH - 1) {
             let stride = 1usize << tooth;
             for _index in 0..stride {
