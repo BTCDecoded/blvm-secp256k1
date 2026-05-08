@@ -15,7 +15,7 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
     // Respect explicit opt-out (e.g. CI cross-compile to Windows/MinGW).
-    let no_asm = env::var("BLVM_SECP256K1_NO_ASM").map_or(false, |v| v == "1");
+    let no_asm = env::var("BLVM_SECP256K1_NO_ASM").is_ok_and(|v| v == "1");
 
     if no_asm || target_os == "windows" {
         return;
