@@ -11,7 +11,15 @@ use std::path::PathBuf;
 
 fn main() {
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    // Respect explicit opt-out (e.g. CI cross-compile to Windows/MinGW).
+    let no_asm = env::var("BLVM_SECP256K1_NO_ASM").map_or(false, |v| v == "1");
+
+    if no_asm || target_os == "windows" {
+        return;
+    }
 
     if target_arch == "arm" {
         // Compile the ARM assembly for field mul/sqr
