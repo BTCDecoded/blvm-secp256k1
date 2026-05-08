@@ -22,7 +22,11 @@ fn main() {
     }
 
     if target_arch == "arm" {
-        // Compile the ARM assembly for field mul/sqr
+        // Compile the ARM assembly for field mul/sqr.
+        // Guard matches field/mod.rs: skip Windows ARM targets (no ELF assembler available).
+        if target_os == "windows" {
+            return;
+        }
         let asm_path = manifest_dir.join("asm").join("field_10x26_arm.s");
 
         if asm_path.exists() {
