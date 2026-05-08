@@ -881,6 +881,40 @@ pub fn ecdsa_sig_sign(
 /// counter on invalid nonce or failed sign — same structure as `secp256k1_ecdsa_sign_inner`.
 /// Returns DER-encoded signature (minimal encoding). `None` if secret key invalid or signing
 /// does not succeed within an iteration budget.
+/// ECDSA sign, returning a **compact** 64-byte signature (r || s).
+/// Same nonce derivation as [`ecdsa_sign_der_rfc6979`]. `None` if key is invalid.
+pub fn ecdsa_sign_compact_rfc6979(msg32: &[u8; 32], seckey32: &[u8; 32]) -> Option<[u8; 64]> {
+    let mut sec = Scalar::zero();
+    if sec.set_b32(seckey32) || sec.is_zero() {
+        return None;
+    }
+    let mut msg = Scalar::zero();
+    let _ = msg.set_b32(msg32);
+    let mut msgmod = [0u8; 32];
+    msg.get_b32(&mut msgmod);
+
+    let mut keydata = [0u8; 64];
+    keydata[..32].copy_from_slice(seckey32);
+    keydata[32..].copy_from_slice(&msgmod);
+
+    const MAX_TRIES: u32 = 10_000;
+    for count in 0..MAX_TRIES {
+        let nonce32 = nonce32_rfc6979_libsecp(&keydata, count);
+        let mut non = Scalar::zero();
+        if non.set_b32(&nonce32) || non.is_zero() {
+            continue;
+        }
+        if let Some((r, s)) = ecdsa_sig_sign(&sec, &msg, &non) {
+            let mut out = [0u8; 64];
+            let (r_half, s_half) = out.split_at_mut(32);
+            r.get_b32(r_half.try_into().unwrap());
+            s.get_b32(s_half.try_into().unwrap());
+            return Some(out);
+        }
+    }
+    None
+}
+
 pub fn ecdsa_sign_der_rfc6979(msg32: &[u8; 32], seckey32: &[u8; 32]) -> Option<Vec<u8>> {
     let mut sec = Scalar::zero();
     if sec.set_b32(seckey32) || sec.is_zero() {
