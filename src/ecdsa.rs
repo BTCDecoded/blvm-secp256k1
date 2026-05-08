@@ -650,6 +650,19 @@ pub fn ecdsa_sig_normalize(sigs: &mut Scalar) {
 }
 
 /// Serialize Ge to 33-byte compressed pubkey (0x02/0x03 + x).
+/// Serialize a curve point as a 65-byte uncompressed public key (0x04 || x || y).
+pub fn ge_to_uncompressed(ge: &Ge) -> [u8; 65] {
+    let mut x = ge.x;
+    let mut y = ge.y;
+    x.normalize();
+    y.normalize();
+    let mut out = [0u8; 65];
+    out[0] = 0x04;
+    x.get_b32((&mut out[1..33]).try_into().unwrap());
+    y.get_b32((&mut out[33..65]).try_into().unwrap());
+    out
+}
+
 pub fn ge_to_compressed(ge: &Ge) -> [u8; 33] {
     let mut out = [0u8; 33];
     if ge.infinity {
