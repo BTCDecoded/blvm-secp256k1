@@ -5,7 +5,7 @@
 //! **Timing:** [`Scalar::inv`] is constant-time on `x86_64` and `aarch64` (modular inverse),
 //! and falls back to Fermat on other targets. [`Scalar::inv_var`] is the same as [`inv`](Scalar::inv).
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(target_os = "windows")))]
 mod scalar_asm {
     use super::Scalar;
 
@@ -545,19 +545,19 @@ fn write_be64(b: &mut [u8], v: u64) {
 }
 
 fn scalar_mul_512(l: &mut [u64; 8], a: &Scalar, b: &Scalar) {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(target_os = "windows")))]
     {
         unsafe {
             scalar_asm::scalar_mul_512_asm(l.as_mut_ptr(), a, b);
         }
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(all(target_arch = "x86_64", not(target_os = "windows"))))]
     {
         scalar_mul_512_rust(l, a, b);
     }
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(all(target_arch = "x86_64", not(target_os = "windows"))))]
 fn scalar_mul_512_rust(l: &mut [u64; 8], a: &Scalar, b: &Scalar) {
     let mut c0: u64 = 0;
     let mut c1: u64 = 0;
@@ -648,7 +648,7 @@ fn limbs_512_to_biguint(l: &[u64; 8]) -> BigUint {
 
 /// Limb-based 512→256 reduction mod n. Replaces BigUint for hot path.
 /// Port of libsecp256k1 scalar_reduce_512 C fallback (muladd/extract).
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(all(target_arch = "x86_64", not(target_os = "windows"))))]
 fn scalar_reduce_512_limbs(r: &mut Scalar, l: &[u64; 8]) {
     let n0 = l[4];
     let n1 = l[5];
@@ -810,12 +810,12 @@ fn scalar_check_overflow(r: &Scalar) -> u64 {
 }
 
 fn scalar_reduce_512(r: &mut Scalar, l: &[u64; 8]) {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(target_os = "windows")))]
     {
         let c = unsafe { scalar_asm::scalar_reduce_512_asm(r, l.as_ptr()) };
         scalar_reduce(r, c + scalar_check_overflow(r));
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(all(target_arch = "x86_64", not(target_os = "windows"))))]
     {
         scalar_reduce_512_limbs(r, l);
     }
