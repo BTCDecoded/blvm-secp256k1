@@ -286,7 +286,7 @@ const PIPPENGER_MAX_BUCKET_WINDOW: i32 = 12;
 const ECMULT_PIPPENGER_THRESHOLD: usize = 88;
 
 fn wnaf_size(w: i32) -> usize {
-    ((WNAF_BITS + (w as usize) - 1) / (w as usize)).max(1)
+    WNAF_BITS.div_ceil(w as usize).max(1)
 }
 
 /// Fixed-size WNAF for Pippenger. Returns skew (0 or 1).
@@ -550,7 +550,7 @@ fn ecmult_multi_pippenger_no_endo(
     }
 
     fn wnaf_size_256(w: i32) -> usize {
-        ((WNAF_BITS_256 + (w as usize) - 1) / (w as usize)).max(1)
+        WNAF_BITS_256.div_ceil(w as usize).max(1)
     }
 
     let bucket_window = pippenger_bucket_window(n);

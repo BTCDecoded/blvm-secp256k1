@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/BTCDecoded/blvm-secp256k1"
 keywords = ["secp256k1", "bitcoin", "ecdsa", "schnorr", "cryptography"]
 categories = ["cryptography", "algorithms"]
-rust-version = "1.70"
+rust-version = "1.82"
 
 [lib]
 name = "blvm_secp256k1"
