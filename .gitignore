@@ -1,9 +1,8 @@
 /target/
 # Library crate: lockfile not committed
 Cargo.lock
-# Local-only harnesses (not shipped in this repo)
+# Local-only harnesses (crypto_ops bench is tracked for libsecp parity)
 scripts/
-benches/
 .cargo/
 
 perf.data
