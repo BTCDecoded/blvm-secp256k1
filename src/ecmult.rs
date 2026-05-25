@@ -281,6 +281,275 @@ fn ecmult_gen_strauss(r: &mut Gej, ng: &Scalar) {
     }
 }
 
+/// Per-point WNAF state for Strauss multi (int8 matches libsecp `strauss_point_state`).
+struct StraussPointState {
+    wnaf_na_1: [i8; 129],
+    wnaf_na_lam: [i8; 129],
+    bits_na_1: usize,
+    bits_na_lam: usize,
+}
+
+fn ecmult_wnaf_small(
+    wnaf: &mut [i8],
+    len: usize,
+    a: &Scalar,
+    w: i32,
+    tmp: &mut [i32; 129],
+) -> usize {
+    let bits = ecmult_wnaf(tmp, len, a, w);
+    for (out, val) in wnaf.iter_mut().zip(tmp.iter()) {
+        *out = *val as i8;
+    }
+    bits
+}
+
+/// Stack-friendly upper bound for Strauss multi (covers libsecp `ecmult_multi_*p_g` benches).
+const STRAUSS_STACK_POINTS: usize = 16;
+
+struct StraussScratch {
+    pre_a: [std::mem::MaybeUninit<Ge>; TABLE_A * STRAUSS_STACK_POINTS],
+    aux: [std::mem::MaybeUninit<FieldElement>; TABLE_A * STRAUSS_STACK_POINTS],
+    ps: [std::mem::MaybeUninit<StraussPointState>; STRAUSS_STACK_POINTS],
+}
+
+impl StraussScratch {
+    const fn new() -> Self {
+        Self {
+            pre_a: [const { std::mem::MaybeUninit::uninit() }; TABLE_A * STRAUSS_STACK_POINTS],
+            aux: [const { std::mem::MaybeUninit::uninit() }; TABLE_A * STRAUSS_STACK_POINTS],
+            ps: [const { std::mem::MaybeUninit::uninit() }; STRAUSS_STACK_POINTS],
+        }
+    }
+
+    fn strauss_n(
+        &mut self,
+        r: &mut Gej,
+        n: usize,
+        scalars: &[Scalar],
+        points: &[Ge],
+        ng: Option<&Scalar>,
+    ) {
+        let pre_a = unsafe {
+            std::slice::from_raw_parts_mut(self.pre_a.as_mut_ptr() as *mut Ge, TABLE_A * n)
+        };
+        let aux = unsafe {
+            std::slice::from_raw_parts_mut(self.aux.as_mut_ptr() as *mut FieldElement, TABLE_A * n)
+        };
+        let ps = unsafe { std::slice::from_raw_parts_mut(self.ps.as_mut_ptr(), n) };
+        ecmult_strauss_multi(r, &points[..n], &scalars[..n], ng, pre_a, aux, ps);
+    }
+}
+
+thread_local! {
+    static STRAUSS_SCRATCH: std::cell::RefCell<StraussScratch> =
+        const { std::cell::RefCell::new(StraussScratch::new()) };
+}
+
+/// Strauss WNAF for multiple base points plus optional `ng*G` — matches libsecp
+/// `secp256k1_ecmult_strauss_wnaf` (used by `ecmult_multi` for n < Pippenger threshold).
+fn ecmult_strauss_multi(
+    r: &mut Gej,
+    points: &[Ge],
+    scalars: &[Scalar],
+    ng: Option<&Scalar>,
+    pre_a: &mut [Ge],
+    aux: &mut [FieldElement],
+    ps: &mut [std::mem::MaybeUninit<StraussPointState>],
+) {
+    let num = points.len().min(scalars.len());
+    debug_assert!(pre_a.len() >= num * TABLE_A);
+    debug_assert!(aux.len() >= num * TABLE_A);
+    debug_assert!(ps.len() >= num);
+
+    let mut z = FieldElement::one();
+    let mut no = 0usize;
+    let mut wnaf_tmp = [0i32; 129];
+
+    for np in 0..num {
+        if scalars[np].is_zero() || points[np].is_infinity() {
+            continue;
+        }
+        let mut na_1 = Scalar::zero();
+        let mut na_lam = Scalar::zero();
+        Scalar::split_lambda(&mut na_1, &mut na_lam, &scalars[np]);
+        ps[no].write(StraussPointState {
+            wnaf_na_1: [0; 129],
+            wnaf_na_lam: [0; 129],
+            bits_na_1: 0,
+            bits_na_lam: 0,
+        });
+        // SAFETY: just initialized above.
+        let st = unsafe { ps[no].assume_init_mut() };
+        st.bits_na_1 = ecmult_wnaf_small(&mut st.wnaf_na_1, 129, &na_1, WINDOW_A, &mut wnaf_tmp);
+        st.bits_na_lam =
+            ecmult_wnaf_small(&mut st.wnaf_na_lam, 129, &na_lam, WINDOW_A, &mut wnaf_tmp);
+
+        let table_off = no * TABLE_A;
+        let mut pj = Gej::default();
+        pj.set_ge(&points[np]);
+        let mut tmp = pj;
+        if no > 0 {
+            tmp.rescale(&z);
+        }
+        ecmult_odd_multiples_table(
+            TABLE_A,
+            &mut pre_a[table_off..table_off + TABLE_A],
+            &mut aux[table_off..table_off + TABLE_A],
+            &mut z,
+            &tmp,
+        );
+        if no > 0 {
+            let pt_z = pj.z;
+            for slot in &mut aux[table_off..table_off + TABLE_A] {
+                let v = *slot;
+                slot.mul(&v, &pt_z);
+            }
+        }
+        no += 1;
+    }
+
+    let mut bits = 0usize;
+    for st in unsafe { std::slice::from_raw_parts(ps.as_ptr() as *const StraussPointState, no) } {
+        bits = bits.max(st.bits_na_1).max(st.bits_na_lam);
+    }
+
+    if no > 0 {
+        ge_table_set_globalz(
+            TABLE_A * no,
+            &mut pre_a[..TABLE_A * no],
+            &aux[..TABLE_A * no],
+        );
+        let beta = crate::group::const_beta();
+        for np in 0..no {
+            let table_off = np * TABLE_A;
+            for i in 0..TABLE_A {
+                aux[table_off + i].mul(&pre_a[table_off + i].x, &beta);
+            }
+        }
+    }
+
+    let mut wnaf_ng_1 = [0i32; 129];
+    let mut wnaf_ng_128 = [0i32; 129];
+    let mut bits_ng_1 = 0usize;
+    let mut bits_ng_128 = 0usize;
+    if let Some(ng) = ng {
+        if !ng.is_zero() {
+            let mut ng_1 = Scalar::zero();
+            let mut ng_128 = Scalar::zero();
+            Scalar::split_128(&mut ng_1, &mut ng_128, ng);
+            bits_ng_1 = ecmult_wnaf(&mut wnaf_ng_1, 129, &ng_1, WINDOW_G);
+            bits_ng_128 = ecmult_wnaf(&mut wnaf_ng_128, 129, &ng_128, WINDOW_G);
+            bits = bits.max(bits_ng_1).max(bits_ng_128);
+        }
+    }
+
+    r.set_infinity();
+    let mut tmpa = Ge::default();
+    for i in (0..bits).rev() {
+        let r_in = *r;
+        r.double_var(&r_in);
+        for (np, st_slot) in ps.iter().take(no).enumerate() {
+            let st = unsafe { st_slot.assume_init_ref() };
+            if i < st.bits_na_1 {
+                let n1 = st.wnaf_na_1[i] as i32;
+                if n1 != 0 {
+                    let table_off = np * TABLE_A;
+                    table_get_ge(
+                        &mut tmpa,
+                        &pre_a[table_off..table_off + TABLE_A],
+                        n1,
+                        WINDOW_A,
+                    );
+                    let r_in = *r;
+                    r.add_ge_var(&r_in, &tmpa);
+                }
+            }
+            if i < st.bits_na_lam {
+                let nlam = st.wnaf_na_lam[i] as i32;
+                if nlam != 0 {
+                    let table_off = np * TABLE_A;
+                    table_get_ge_lambda(
+                        &mut tmpa,
+                        &pre_a[table_off..table_off + TABLE_A],
+                        &aux[table_off..table_off + TABLE_A],
+                        nlam,
+                        WINDOW_A,
+                    );
+                    let r_in = *r;
+                    r.add_ge_var(&r_in, &tmpa);
+                }
+            }
+        }
+        if let Some(ng_sc) = ng {
+            if !ng_sc.is_zero() {
+                let n1 = if i < bits_ng_1 { wnaf_ng_1[i] } else { 0 };
+                if n1 != 0 {
+                    table_get_ge_storage(&mut tmpa, &PRE_G, n1, WINDOW_G);
+                    let r_in = *r;
+                    r.add_zinv_var(&r_in, &tmpa, &z);
+                }
+                let n128 = if i < bits_ng_128 { wnaf_ng_128[i] } else { 0 };
+                if n128 != 0 {
+                    table_get_ge_storage(&mut tmpa, &PRE_G_128, n128, WINDOW_G);
+                    let r_in = *r;
+                    r.add_zinv_var(&r_in, &tmpa, &z);
+                }
+            }
+        }
+    }
+    if !r.is_infinity() {
+        let r_z = r.z;
+        r.z.mul(&r_z, &z);
+    }
+}
+
+/// Multi-multiply via Strauss WNAF (libsecp path for n < Pippenger threshold with scratch).
+pub fn ecmult_multi_strauss(r: &mut Gej, g_scalar: &Scalar, scalars: &[Scalar], points: &[Ge]) {
+    let n = scalars.len().min(points.len());
+    if n == 0 {
+        if g_scalar.is_zero() {
+            r.set_infinity();
+        } else {
+            let mut inf = Gej::default();
+            inf.set_infinity();
+            let zero = Scalar::zero();
+            ecmult(r, &inf, &zero, Some(g_scalar));
+        }
+        return;
+    }
+
+    let ng = if g_scalar.is_zero() {
+        None
+    } else {
+        Some(g_scalar)
+    };
+
+    if n <= STRAUSS_STACK_POINTS {
+        STRAUSS_SCRATCH.with(|cell| {
+            cell.borrow_mut().strauss_n(r, n, scalars, points, ng);
+        });
+        return;
+    }
+
+    ecmult_multi_strauss_heap(r, scalars, points, ng);
+}
+
+fn ecmult_multi_strauss_heap(r: &mut Gej, scalars: &[Scalar], points: &[Ge], ng: Option<&Scalar>) {
+    let n = scalars.len().min(points.len());
+    let mut pre_a = Vec::with_capacity(n * TABLE_A);
+    let mut aux = Vec::with_capacity(n * TABLE_A);
+    // SAFETY: `ecmult_odd_multiples_table` fully initializes used slots before read.
+    unsafe {
+        pre_a.set_len(n * TABLE_A);
+        aux.set_len(n * TABLE_A);
+    }
+    let mut ps: Vec<std::mem::MaybeUninit<StraussPointState>> = Vec::with_capacity(n);
+    unsafe {
+        ps.set_len(n);
+    }
+    ecmult_strauss_multi(r, points, scalars, ng, &mut pre_a, &mut aux, &mut ps);
+}
+
 const WNAF_BITS: usize = 128;
 const PIPPENGER_MAX_BUCKET_WINDOW: i32 = 12;
 const ECMULT_PIPPENGER_THRESHOLD: usize = 88;
@@ -737,14 +1006,13 @@ fn pippenger_wnaf_256(
 }
 
 /// Multi-multiply: R = g_scalar*G + sum_i(scalar_i * point_i).
-/// Uses Pippenger for n >= 88, ecmult_multi_simple otherwise.
-/// Uses no-endo Pippenger (256-bit WNAF) for correctness with full scalars.
+/// Uses Pippenger for n >= 88, Strauss batch for smaller n.
 pub fn ecmult_multi(r: &mut Gej, g_scalar: &Scalar, scalars: &[Scalar], points: &[Ge]) {
     let n = scalars.len().min(points.len());
     if n >= ECMULT_PIPPENGER_THRESHOLD {
         ecmult_multi_pippenger_no_endo(r, g_scalar, scalars, points);
     } else {
-        ecmult_multi_simple(r, g_scalar, scalars, points);
+        ecmult_multi_strauss(r, g_scalar, scalars, points);
     }
 }
 
