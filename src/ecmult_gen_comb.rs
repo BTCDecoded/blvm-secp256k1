@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use subtle::Choice;
 
 use crate::field::FieldElement;
-use crate::group::{ge_set_all_gej_var, generator_g, Ge, GeStorage, Gej};
+use crate::group::{Ge, GeStorage, Gej, ge_set_all_gej_var, generator_g};
 use crate::scalar::Scalar;
 
 /// Constant-time conditional move on a `GeStorage`, parameterised by a bit-mask `mask`
@@ -115,7 +115,7 @@ fn build_comb_context() -> CombContext {
 ///
 /// Mirrors `secp256k1_ecmult_gen_compute_table` in
 /// `libsecp256k1/src/ecmult_gen_compute_table_impl.h`.
-fn compute_table(gen: &Ge) -> [[GeStorage; COMB_POINTS]; COMB_BLOCKS] {
+fn compute_table(generator: &Ge) -> [[GeStorage; COMB_POINTS]; COMB_BLOCKS] {
     // u starts at gen/2 (multiplied via a simple ladder to avoid relying on ecmult).
     let mut u = Gej::default();
     u.set_infinity();
@@ -126,7 +126,7 @@ fn compute_table(gen: &Ge) -> [[GeStorage; COMB_POINTS]; COMB_BLOCKS] {
         u.double_var(&u_in);
         if half_one.get_bits_var(i, 1) != 0 {
             let u_in = u;
-            u.add_ge_var(&u_in, gen);
+            u.add_ge_var(&u_in, generator);
         }
     }
 

@@ -6,7 +6,7 @@ use subtle::{Choice, ConstantTimeEq};
 
 use crate::ecmult::ecmult_odd_multiples_table;
 use crate::field::FieldElement;
-use crate::group::{ge_table_set_globalz, generator_g, Ge, Gej};
+use crate::group::{Ge, Gej, ge_table_set_globalz, generator_g};
 use crate::scalar::Scalar;
 
 const ECMULT_CONST_GROUP_SIZE: u32 = 5;

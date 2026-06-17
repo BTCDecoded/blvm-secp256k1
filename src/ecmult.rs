@@ -8,7 +8,7 @@
 //! and [`ecmult_gen_const`](crate::ecmult_gen_const) entry points instead.
 
 use crate::field::FieldElement;
-use crate::group::{ge_table_set_globalz, generator_g, Ge, GeStorage, Gej};
+use crate::group::{Ge, GeStorage, Gej, ge_table_set_globalz, generator_g};
 use crate::scalar::Scalar;
 
 pub(crate) const WINDOW_A: i32 = 5;
@@ -1114,7 +1114,7 @@ pub(crate) fn ecmult_simple(r: &mut Gej, a: &Gej, na: &Scalar) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::group::{generator_g, Ge, Gej};
+    use crate::group::{Ge, Gej, generator_g};
     use crate::scalar::Scalar;
 
     /// Debug: print WNAF for na=-3

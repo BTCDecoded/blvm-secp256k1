@@ -12,7 +12,7 @@ use crate::ecdsa::{ge_from_compressed, ge_to_compressed, pubkey_from_secret};
 use crate::ecmult;
 use crate::ecmult_gen_const;
 use crate::field::FieldElement;
-use crate::group::{generator_g, Ge, Gej};
+use crate::group::{Ge, Gej, generator_g};
 use crate::scalar::Scalar;
 use crate::schnorr;
 

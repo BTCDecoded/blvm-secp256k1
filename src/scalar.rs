@@ -9,7 +9,7 @@
 mod scalar_asm {
     use super::Scalar;
 
-    extern "C" {
+    unsafe extern "C" {
         /// libsecp256k1 scalar_mul_512: l8 = a * b (512-bit product).
         /// SysV: rdi=l8, rsi=a, rdx=b.
         fn blvm_secp256k1_scalar_mul_512(l8: *mut u64, a: *const Scalar, b: *const Scalar);
@@ -21,12 +21,14 @@ mod scalar_asm {
 
     #[inline(always)]
     pub(super) unsafe fn scalar_mul_512_asm(l: *mut u64, a: *const Scalar, b: *const Scalar) {
-        blvm_secp256k1_scalar_mul_512(l, a, b);
+        unsafe {
+            blvm_secp256k1_scalar_mul_512(l, a, b);
+        }
     }
 
     #[inline(always)]
     pub(super) unsafe fn scalar_reduce_512_asm(r: *mut Scalar, l: *const u64) -> u64 {
-        blvm_secp256k1_scalar_reduce_512(r, l)
+        unsafe { blvm_secp256k1_scalar_reduce_512(r, l) }
     }
 }
 
@@ -408,7 +410,7 @@ impl Scalar {
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
-            use crate::modinv64::{modinv64, SECP256K1_SCALAR_MODINV_MODINFO};
+            use crate::modinv64::{SECP256K1_SCALAR_MODINV_MODINFO, modinv64};
             let mut x = scalar_to_signed62(a);
             modinv64(&mut x, &SECP256K1_SCALAR_MODINV_MODINFO);
             scalar_from_signed62(self, &x);

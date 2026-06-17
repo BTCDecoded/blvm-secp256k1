@@ -1,7 +1,7 @@
 //! Group operation tests.
 
 use blvm_secp256k1::field::FieldElement;
-use blvm_secp256k1::group::{ge_set_all_gej_var, generator_g, Ge, Gej};
+use blvm_secp256k1::group::{Ge, Gej, ge_set_all_gej_var, generator_g};
 
 /// Generator G matches secp256k1 curve (SEC2 2.7.1)
 #[test]

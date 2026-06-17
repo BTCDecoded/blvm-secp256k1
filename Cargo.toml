@@ -1,14 +1,14 @@
 [package]
 name = "blvm-secp256k1"
 version = "0.1.9"
-edition = "2021"
+edition = "2024"
 authors = ["Bitcoin Commons Team"]
 description = "Rust reimplementation of libsecp256k1 with ASM for hot paths. Performance-optimized secp256k1 for Bitcoin/Ethereum."
 license = "MIT"
 repository = "https://github.com/BTCDecoded/blvm-secp256k1"
 keywords = ["secp256k1", "bitcoin", "ecdsa", "schnorr", "cryptography"]
 categories = ["cryptography", "algorithms"]
-rust-version = "1.82"
+rust-version = "1.85"
 
 [lib]
 name = "blvm_secp256k1"

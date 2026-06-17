@@ -3,7 +3,7 @@
 //! Pure Rust implementation using u128 for wide multiplication.
 //! Field modulus: p = 2^256 - 2^32 - 977 (SEC2 secp256k1)
 
-use crate::modinv64::{self, Signed62, SECP256K1_FE_MODINV_MODINFO};
+use crate::modinv64::{self, SECP256K1_FE_MODINV_MODINFO, Signed62};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// Field element in 5x52 limb representation.

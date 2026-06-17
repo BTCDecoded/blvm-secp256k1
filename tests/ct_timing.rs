@@ -44,7 +44,7 @@ use blvm_secp256k1::ecmult_gen_const;
 use blvm_secp256k1::ellswift::{ellswift_create, ellswift_xdh};
 use blvm_secp256k1::group::Gej;
 use blvm_secp256k1::musig::{
-    nonce_agg, nonce_gen, nonce_process, partial_sign, KeyAggCache, Session,
+    KeyAggCache, Session, nonce_agg, nonce_gen, nonce_process, partial_sign,
 };
 use blvm_secp256k1::scalar::Scalar;
 use blvm_secp256k1::schnorr::{schnorr_sign, xonly_pubkey_from_secret};

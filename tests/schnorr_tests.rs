@@ -1,8 +1,8 @@
 //! BIP 340 Schnorr sign/verify tests.
 
 use blvm_secp256k1::schnorr::{
-    schnorr_sign, schnorr_sign_with_keypair, schnorr_verify, schnorr_verify_batch,
-    xonly_pubkey_from_secret, Keypair,
+    Keypair, schnorr_sign, schnorr_sign_with_keypair, schnorr_verify, schnorr_verify_batch,
+    xonly_pubkey_from_secret,
 };
 
 fn hex32(s: &str) -> [u8; 32] {
@@ -96,7 +96,9 @@ fn test_schnorr_our_sign_matches_bip340_vector0() {
     let aux = hex32("0000000000000000000000000000000000000000000000000000000000000000");
     let msg =
         hex::decode("0000000000000000000000000000000000000000000000000000000000000000").unwrap();
-    let expected_sig = hex64("E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA821525F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
+    let expected_sig = hex64(
+        "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA821525F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0",
+    );
 
     let our_sig = schnorr_sign(&seckey, &msg, &aux).expect("sign");
     assert_eq!(

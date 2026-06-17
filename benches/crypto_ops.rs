@@ -4,21 +4,21 @@
 //! Run: `cargo bench --profile release --bench crypto_ops`
 
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use blvm_secp256k1::ecdsa::{
     ecdsa_sig_sign, ecdsa_sign_der_rfc6979, ge_from_compressed, ge_to_compressed,
     pubkey_from_secret, verify_ecdsa_direct,
 };
 use blvm_secp256k1::ecmult::{ecmult, ecmult_gen, ecmult_multi};
-use blvm_secp256k1::group::{generator_g, Ge, Gej};
+use blvm_secp256k1::group::{Ge, Gej, generator_g};
 use blvm_secp256k1::scalar::Scalar;
 use blvm_secp256k1::schnorr::{
-    schnorr_sign, schnorr_sign_with_keypair, schnorr_verify, xonly_pubkey_from_secret, Keypair,
+    Keypair, schnorr_sign, schnorr_sign_with_keypair, schnorr_verify, xonly_pubkey_from_secret,
 };
 use blvm_secp256k1::{ecdh, ecmult_const, ecmult_gen_const};
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use sha2::{Digest, Sha256};
 
 /// Compressed pubkey and scalar from `src/modules/ecdh/bench_impl.h` (libsecp ECDH bench).

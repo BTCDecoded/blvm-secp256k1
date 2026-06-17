@@ -10,7 +10,7 @@
 use crate::ecmult;
 use crate::ecmult_gen_const;
 use crate::field::FieldElement;
-use crate::group::{generator_g, Ge, Gej};
+use crate::group::{Ge, Gej, generator_g};
 use crate::rfc6979::nonce32_rfc6979_libsecp;
 use crate::scalar::Scalar;
 use subtle::ConstantTimeEq;
@@ -61,11 +61,7 @@ pub fn ecdsa_verify_batch(sigs: &[[u8; 64]], msgs: &[[u8; 32]], pubkeys: &[[u8; 
             ge_from_compressed(&pubkeys[0]),
             {
                 let mut m = Scalar::zero();
-                if m.set_b32(&msgs[0]) {
-                    None
-                } else {
-                    Some(m)
-                }
+                if m.set_b32(&msgs[0]) { None } else { Some(m) }
             },
         ) {
             return ecdsa_sig_verify(&sigr, &sigs_scalar, &pk, &msg);
@@ -1012,6 +1008,85 @@ mod bip66_strict_der_regression {
         assert!(
             parsed.is_some(),
             "strict DER parse failed for known-mainnet sig"
+        );
+    }
+}
+
+#[cfg(test)]
+mod block443992_regression {
+    use super::*;
+
+    #[test]
+    fn test_sig2_pk1_checksigverify_sighash() {
+        // sig2 DER (without sighash byte)
+        let sig2_der = hex::decode(
+            "304402202feedc3b54cd87868406e93ee650742b61ce39162d70b6fde5a805fd40a56c9\
+             00220015970a2fc874c32edfcd6341981d35e5b019a14b17662e00f49e363db72b93c",
+        )
+        .unwrap();
+        let pubkey1 =
+            hex::decode("02fb6827937707bf432d85b094bc180ab93394ee013b3ecaafa04b9135e3ab6e50")
+                .unwrap();
+        // CHECKSIGVERIFY sighash (full redeem, correct prevout)
+        let h_full: [u8; 32] =
+            hex::decode("87c7d63cc889ab0d4484a2500fbbd0e8513da01af025d04a1b7a226862ed373a")
+                .unwrap()
+                .try_into()
+                .unwrap();
+
+        let r = verify_ecdsa_direct(&sig2_der, &pubkey1, &h_full, true, false);
+        println!("sig2+pk1+h_full (strict DER, no LOW_S): {:?}", r);
+
+        // Key recovery: find what pubkey sig2 actually signs for at h_full
+        let (sigr, sigs) = ecdsa_sig_parse_der(&sig2_der).expect("parse sig2");
+        let mut msg = crate::scalar::Scalar::zero();
+        msg.set_b32(&h_full);
+        for recid in 0u8..4 {
+            if let Some(recovered) = ecdsa_sig_recover(&sigr, &sigs, &msg, recid) {
+                let compressed = ge_to_compressed(&recovered);
+                println!(
+                    "  recovered pubkey (recid={recid}): {}",
+                    hex::encode(compressed)
+                );
+                println!("  matches pk1: {}", compressed == pubkey1.as_slice());
+            }
+        }
+
+        // Also test sig1 + pk3 + cond5 sighash (should pass)
+        let sig1_der = hex::decode(
+            "3045022100ac4319cf798ab10d864ad5f206cd405b7a15957eef2b0094ab24ffcf2c28fbfb\
+             022012053c8142d9e4f832d85c6ce7dba82d44d011c7713fb584771fb8770da97c0c",
+        )
+        .unwrap();
+        let pubkey3 =
+            hex::decode("02c8662aaa171b5c98fef66c02138165f600c7c5743380686958e395edf8eb36bf")
+                .unwrap();
+        let h_cond5: [u8; 32] =
+            hex::decode("6da9ad27370c9788ac72fe032e22f9391fc492c3807d670328430bafbccca704")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let r2 = verify_ecdsa_direct(&sig1_der, &pubkey3, &h_cond5, true, false);
+        println!("sig1+pk2+h_cond5: {:?}", r2);
+        assert_eq!(r2, Some(true), "sig1+pk2+h_cond5 should verify");
+
+        // Verify sig2+pk1 against the STRIPPED sighash (OP_CODESEPARATOR bytes removed
+        // from scriptCode before hashing, per Bitcoin Core's SerializeScriptCode).
+        // If this passes, Core computes a different sighash than BLVM (no-strip=87c7d63c vs stripped=1d893b45).
+        let h_stripped: [u8; 32] =
+            hex::decode("1d893b45c5d005bf6a20a0ab1ad19c16e92da602e9984180d947e2798aef1e41")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let r_stripped = verify_ecdsa_direct(&sig2_der, &pubkey1, &h_stripped, true, false);
+        println!(
+            "sig2+pk1+h_stripped (205B codesep-stripped): {:?}",
+            r_stripped
+        );
+        assert_eq!(
+            r_stripped,
+            Some(true),
+            "sig2+pk1 must be VALID against codesep-stripped sighash — Core strips OP_CODESEPARATOR in SerializeScriptCode"
         );
     }
 }

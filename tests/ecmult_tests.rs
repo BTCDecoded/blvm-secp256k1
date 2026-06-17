@@ -1,7 +1,7 @@
 //! Ecmult tests: scalar multiplication R = k*G and R = na*A + ng*G.
 
 use blvm_secp256k1::ecmult::{ecmult, ecmult_gen};
-use blvm_secp256k1::group::{generator_g, Ge, Gej};
+use blvm_secp256k1::group::{Ge, Gej, generator_g};
 use blvm_secp256k1::scalar::Scalar;
 
 /// ecmult_gen(1) = G

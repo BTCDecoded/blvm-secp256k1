@@ -6,7 +6,7 @@ use blvm_secp256k1::ecdsa::{
     ge_from_compressed, ge_to_compressed, pubkey_from_secret, verify_ecdsa_direct,
 };
 use blvm_secp256k1::ecmult;
-use blvm_secp256k1::group::{generator_g, Gej};
+use blvm_secp256k1::group::{Gej, generator_g};
 use blvm_secp256k1::scalar::Scalar;
 use subtle::ConstantTimeEq;
 
