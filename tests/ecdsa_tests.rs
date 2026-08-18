@@ -458,3 +458,66 @@ fn test_ecdsa_sig_normalize() {
     assert!(!s_high.is_high());
     assert!(s_high.is_one()); // n-1 normalized = 1 (low-S)
 }
+
+
+#[test]
+fn ecdsa_verify_batch_results_all_valid_and_mixed() {
+    use blvm_secp256k1::ecdsa::{
+        ecdsa_sign_compact_rfc6979, ecdsa_sig_parse_compact, ecdsa_sig_verify,
+        ecdsa_verify_batch_results, ge_from_compressed, ge_to_compressed, pubkey_from_secret,
+    };
+    use blvm_secp256k1::scalar::Scalar;
+
+    let verify_one = |sig: &[u8; 64], msg: &[u8; 32], pk: &[u8; 33]| -> bool {
+        let (r, s) = match ecdsa_sig_parse_compact(sig) {
+            Some(x) => x,
+            None => return false,
+        };
+        if s.is_high() {
+            return false;
+        }
+        let ge = match ge_from_compressed(pk) {
+            Some(p) => p,
+            None => return false,
+        };
+        let mut m = Scalar::zero();
+        if m.set_b32(msg) {
+            return false;
+        }
+        ecdsa_sig_verify(&r, &s, &ge, &m)
+    };
+
+    let mut sigs = Vec::new();
+    let mut msgs = Vec::new();
+    let mut pks = Vec::new();
+    for i in 1u8..=8 {
+        let mut sk = [0u8; 32];
+        sk[31] = i;
+        let mut msg = [0u8; 32];
+        msg[31] = i.wrapping_mul(3);
+        let pk = ge_to_compressed(&pubkey_from_secret(&scalar_from_b32(&sk)));
+        let sig = ecdsa_sign_compact_rfc6979(&msg, &sk).expect("sign");
+        sigs.push(sig);
+        msgs.push(msg);
+        pks.push(pk);
+    }
+    let expected: Vec<bool> = (0..8)
+        .map(|i| verify_one(&sigs[i], &msgs[i], &pks[i]))
+        .collect();
+    assert!(
+        expected.iter().all(|&ok| ok),
+        "fixture singles must verify: {expected:?}"
+    );
+    // batch_results may take CPU all-or-nothing then fall back; must match per-sig.
+    assert_eq!(ecdsa_verify_batch_results(&sigs, &msgs, &pks), expected);
+
+    sigs[3][40] ^= 0x01;
+    let mixed_expected: Vec<bool> = (0..8)
+        .map(|i| verify_one(&sigs[i], &msgs[i], &pks[i]))
+        .collect();
+    assert!(!mixed_expected[3]);
+    assert_eq!(
+        ecdsa_verify_batch_results(&sigs, &msgs, &pks),
+        mixed_expected
+    );
+}

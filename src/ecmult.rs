@@ -43,6 +43,25 @@ mod precomputed {
 
 use precomputed::{PRE_G, PRE_G_128};
 
+/// Flattened PRE_G / PRE_G_128 bytes for GPU upload (`feature = "gpu"`).
+/// Each entry is 64 bytes: `GeStorage { x: FeStorage, y: FeStorage }` with `n[4]` LE u64 limbs
+/// matching CUDA `Fe.d[4]`.
+#[cfg(feature = "gpu")]
+pub(crate) fn pre_g_table_bytes() -> (&'static [u8], &'static [u8]) {
+    const ENTRY: usize = core::mem::size_of::<GeStorage>();
+    debug_assert_eq!(ENTRY, 64);
+    debug_assert_eq!(PRE_G.len(), 8192);
+    debug_assert_eq!(PRE_G_128.len(), 8192);
+    // SAFETY: GeStorage is #[repr(C)]; FeStorage is #[repr(C)] 4×u64; arrays are static.
+    let a = unsafe {
+        core::slice::from_raw_parts(PRE_G.as_ptr().cast::<u8>(), PRE_G.len() * ENTRY)
+    };
+    let b = unsafe {
+        core::slice::from_raw_parts(PRE_G_128.as_ptr().cast::<u8>(), PRE_G_128.len() * ENTRY)
+    };
+    (a, b)
+}
+
 /// Fill pre_a with odd multiples [1*a, 3*a, ..., (2*n-1)*a]. zr gets z-ratios, z gets final z.
 #[inline(always)]
 pub(crate) fn ecmult_odd_multiples_table(

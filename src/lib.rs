@@ -1,7 +1,7 @@
 //! commons-secp256k1: Rust reimplementation of libsecp256k1
 //!
 //! Pure Rust implementation with vendored ASM for hot paths (ARM32 field, x86_64 scalar).
-//! No FFI to C — all logic in Rust.
+//! Optional `gpu` feature links in-tree CUDA (`cuda/`) for batch verify.
 //!
 //! ## Context-free API
 //!
@@ -13,6 +13,8 @@
 pub mod ecdh;
 pub mod ecdsa;
 pub mod ecmult;
+#[cfg(feature = "gpu")]
+pub mod gpu;
 mod ecmult_const;
 mod ecmult_gen_comb;
 pub use ecmult_const::ecmult_const;

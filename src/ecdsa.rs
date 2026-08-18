@@ -50,7 +50,18 @@ fn ecdsa_const_p_minus_order() -> &'static FieldElement {
 /// Batch verify ECDSA signatures. Returns true if all valid, false if any invalid.
 /// Uses random linear combination: sum z_i*(u1_i*G + u2_i*P_i) == sum z_i*R_i.
 /// z_i = r_i + s_i (deterministic from sig). Rejects high-S.
+///
+/// With feature `gpu`, large batches (≥ [`crate::gpu::GPU_BATCH_MIN`]) try native CUDA
+/// first and collapse per-item results; GPU failure falls back to CPU.
 pub fn ecdsa_verify_batch(sigs: &[[u8; 64]], msgs: &[[u8; 32]], pubkeys: &[[u8; 33]]) -> bool {
+    #[cfg(feature = "gpu")]
+    if let Some(results) = crate::gpu::try_ecdsa_verify_batch(sigs, msgs, pubkeys) {
+        return results.iter().all(|&ok| ok);
+    }
+    ecdsa_verify_batch_cpu(sigs, msgs, pubkeys)
+}
+
+fn ecdsa_verify_batch_cpu(sigs: &[[u8; 64]], msgs: &[[u8; 32]], pubkeys: &[[u8; 33]]) -> bool {
     let n = sigs.len().min(msgs.len()).min(pubkeys.len());
     if n == 0 {
         return true;
@@ -61,7 +72,11 @@ pub fn ecdsa_verify_batch(sigs: &[[u8; 64]], msgs: &[[u8; 32]], pubkeys: &[[u8; 
             ge_from_compressed(&pubkeys[0]),
             {
                 let mut m = Scalar::zero();
-                if m.set_b32(&msgs[0]) { None } else { Some(m) }
+                if m.set_b32(&msgs[0]) {
+                    None
+                } else {
+                    Some(m)
+                }
             },
         ) {
             return ecdsa_sig_verify(&sigr, &sigs_scalar, &pk, &msg);
@@ -74,6 +89,92 @@ pub fn ecdsa_verify_batch(sigs: &[[u8; 64]], msgs: &[[u8; 32]], pubkeys: &[[u8; 
     } else {
         ecdsa_verify_batch_heap(sigs, msgs, pubkeys, n)
     }
+}
+
+/// Per-signature ECDSA batch verify (GPU when available, else CPU batch + serial fallback).
+///
+/// Same contract as Schnorr collector drain: one `bool` per input index. Invalid parse
+/// yields `false` for that index. Prefer this over [`ecdsa_verify_batch`] when callers
+/// need per-item verdicts (CHECKMULTISIG matching, mixed valid/invalid sets).
+pub fn ecdsa_verify_batch_results(
+    sigs: &[[u8; 64]],
+    msgs: &[[u8; 32]],
+    pubkeys: &[[u8; 33]],
+) -> Vec<bool> {
+    let n = sigs.len().min(msgs.len()).min(pubkeys.len());
+    if n == 0 {
+        return Vec::new();
+    }
+
+    #[cfg(feature = "gpu")]
+    if let Some(results) = crate::gpu::try_ecdsa_verify_batch(sigs, msgs, pubkeys) {
+        return results;
+    }
+
+    if ecdsa_verify_batch_cpu(sigs, msgs, pubkeys) {
+        return vec![true; n];
+    }
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        out.push(ecdsa_verify_one_compact(&sigs[i], &msgs[i], &pubkeys[i]));
+    }
+    out
+}
+
+/// Per-item compact ECDSA verify (CPU only; never enters the GPU path).
+#[inline]
+pub fn ecdsa_verify_one_compact(sig: &[u8; 64], msg: &[u8; 32], pubkey: &[u8; 33]) -> bool {
+    let (sigr, sigs_scalar) = match ecdsa_sig_parse_compact(sig) {
+        Some(s) => s,
+        None => return false,
+    };
+    if sigs_scalar.is_high() {
+        return false;
+    }
+    let pk = match ge_from_compressed(pubkey) {
+        Some(p) => p,
+        None => return false,
+    };
+    let mut m = Scalar::zero();
+    if m.set_b32(msg) {
+        return false;
+    }
+    ecdsa_sig_verify(&sigr, &sigs_scalar, &pk, &m)
+}
+
+/// Serialize (r, s) to 64-byte compact form (big-endian r || s).
+#[inline]
+pub fn ecdsa_sig_serialize_compact(sigr: &Scalar, sigs: &Scalar) -> [u8; 64] {
+    let mut out = [0u8; 64];
+    let mut r32 = [0u8; 32];
+    let mut s32 = [0u8; 32];
+    sigr.get_b32(&mut r32);
+    sigs.get_b32(&mut s32);
+    out[..32].copy_from_slice(&r32);
+    out[32..].copy_from_slice(&s32);
+    out
+}
+
+/// Parse DER (or lax DER) to compact 64-byte sig, optionally enforcing low-S.
+/// When `enforce_low_s` is false, high-S is normalized (n−s) so batch verify can accept it.
+/// Returns `None` on parse failure or high-S when `enforce_low_s` is set.
+pub fn ecdsa_der_to_compact(
+    der_sig: &[u8],
+    strict_der: bool,
+    enforce_low_s: bool,
+) -> Option<[u8; 64]> {
+    let (sigr, mut sigs) = if strict_der {
+        ecdsa_sig_parse_der(der_sig)?
+    } else {
+        ecdsa_sig_parse_der_lax(der_sig)?
+    };
+    if enforce_low_s && sigs.is_high() {
+        return None;
+    }
+    if sigs.is_high() {
+        ecdsa_sig_normalize(&mut sigs);
+    }
+    Some(ecdsa_sig_serialize_compact(&sigr, &sigs))
 }
 
 fn ecdsa_verify_batch_stack(
@@ -911,6 +1012,7 @@ pub fn ecdsa_sign_compact_rfc6979(msg32: &[u8; 32], seckey32: &[u8; 32]) -> Opti
     keydata[32..].copy_from_slice(&msgmod);
 
     const MAX_TRIES: u32 = 10_000;
+    let mut out_sig = None;
     for count in 0..MAX_TRIES {
         let nonce32 = nonce32_rfc6979_libsecp(&keydata, count);
         let mut non = Scalar::zero();
@@ -922,10 +1024,13 @@ pub fn ecdsa_sign_compact_rfc6979(msg32: &[u8; 32], seckey32: &[u8; 32]) -> Opti
             let (r_half, s_half) = out.split_at_mut(32);
             r.get_b32(r_half.try_into().unwrap());
             s.get_b32(s_half.try_into().unwrap());
-            return Some(out);
+            out_sig = Some(out);
+            break;
         }
     }
-    None
+    keydata.fill(0);
+    msgmod.fill(0);
+    out_sig
 }
 
 pub fn ecdsa_sign_der_rfc6979(msg32: &[u8; 32], seckey32: &[u8; 32]) -> Option<Vec<u8>> {
@@ -943,6 +1048,7 @@ pub fn ecdsa_sign_der_rfc6979(msg32: &[u8; 32], seckey32: &[u8; 32]) -> Option<V
     keydata[32..].copy_from_slice(&msgmod);
 
     const MAX_TRIES: u32 = 10_000;
+    let mut out_sig = None;
     for count in 0..MAX_TRIES {
         let nonce32 = nonce32_rfc6979_libsecp(&keydata, count);
         let mut non = Scalar::zero();
@@ -950,10 +1056,13 @@ pub fn ecdsa_sign_der_rfc6979(msg32: &[u8; 32], seckey32: &[u8; 32]) -> Option<V
             continue;
         }
         if let Some((r, s)) = ecdsa_sig_sign(&sec, &msg, &non) {
-            return Some(ecdsa_sig_serialize_der(&r, &s));
+            out_sig = Some(ecdsa_sig_serialize_der(&r, &s));
+            break;
         }
     }
-    None
+    keydata.fill(0);
+    msgmod.fill(0);
+    out_sig
 }
 
 /// Verify ECDSA signature directly from DER bytes, pubkey bytes, and message hash.
@@ -988,6 +1097,17 @@ pub fn verify_ecdsa_direct(
     let mut msg = Scalar::zero();
     if msg.set_b32(msg_hash) {
         return None;
+    }
+    // Prefer GPU when built with `gpu` and CUDA is up; CPU on any miss.
+    #[cfg(feature = "gpu")]
+    if crate::gpu::gpu_available() {
+        let compact = ecdsa_sig_serialize_compact(&sigr, &sigs);
+        let pk33 = ge_to_compressed(&pk);
+        if let Some(results) =
+            crate::gpu::try_ecdsa_verify_batch(&[compact], &[*msg_hash], &[pk33])
+        {
+            return Some(results.first().copied().unwrap_or(false));
+        }
     }
     Some(ecdsa_sig_verify(&sigr, &sigs, &pk, &msg))
 }

@@ -8,6 +8,7 @@
 
 use sha2::{Digest, Sha256};
 use subtle::Choice;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::ecmult;
 use crate::ecmult_gen_const;
@@ -114,6 +115,15 @@ pub fn xonly_pubkey_from_secret(seckey: &[u8; 32]) -> Option<[u8; 32]> {
 /// pubkey_x32: 32-byte x-only pubkey
 #[inline(always)]
 pub fn schnorr_verify(sig64: &[u8; 64], msg: &[u8], pubkey_x32: &[u8; 32]) -> bool {
+    // GPU path requires 32-byte messages (BIP-340). Fall through to CPU otherwise.
+    #[cfg(feature = "gpu")]
+    if msg.len() == 32 && crate::gpu::gpu_available() {
+        if let Some(results) = crate::gpu::try_schnorr_verify_batch(&[*sig64], &[msg], &[*pubkey_x32])
+        {
+            return results.first().copied().unwrap_or(false);
+        }
+    }
+
     let r_bytes: [u8; 32] = sig64[0..32].try_into().unwrap();
     let s_bytes: [u8; 32] = sig64[32..64].try_into().unwrap();
 
@@ -177,6 +187,14 @@ pub fn schnorr_verify(sig64: &[u8; 64], msg: &[u8], pubkey_x32: &[u8; 32]) -> bo
 /// Returns true if all signatures are valid, false if any is invalid.
 /// Uses ecmult_multi for both sum_left and sum_right.
 pub fn schnorr_verify_batch(sigs: &[[u8; 64]], msgs: &[&[u8]], pubkeys: &[[u8; 32]]) -> bool {
+    #[cfg(feature = "gpu")]
+    if let Some(results) = crate::gpu::try_schnorr_verify_batch(sigs, msgs, pubkeys) {
+        return results.iter().all(|&ok| ok);
+    }
+    schnorr_verify_batch_cpu(sigs, msgs, pubkeys)
+}
+
+fn schnorr_verify_batch_cpu(sigs: &[[u8; 64]], msgs: &[&[u8]], pubkeys: &[[u8; 32]]) -> bool {
     let n = sigs.len().min(msgs.len()).min(pubkeys.len());
     if n == 0 {
         return true;
@@ -190,6 +208,30 @@ pub fn schnorr_verify_batch(sigs: &[[u8; 64]], msgs: &[&[u8]], pubkeys: &[[u8; 3
         Some(ok) => ok,
         None => (0..n).all(|i| schnorr_verify(&sigs[i], msgs[i], &pubkeys[i])),
     }
+}
+
+/// Per-signature Schnorr batch verify (GPU when available, else CPU batch + serial fallback).
+pub fn schnorr_verify_batch_results(
+    sigs: &[[u8; 64]],
+    msgs: &[&[u8]],
+    pubkeys: &[[u8; 32]],
+) -> Vec<bool> {
+    let n = sigs.len().min(msgs.len()).min(pubkeys.len());
+    if n == 0 {
+        return Vec::new();
+    }
+
+    #[cfg(feature = "gpu")]
+    if let Some(results) = crate::gpu::try_schnorr_verify_batch(sigs, msgs, pubkeys) {
+        return results;
+    }
+
+    if schnorr_verify_batch_cpu(sigs, msgs, pubkeys) {
+        return vec![true; n];
+    }
+    (0..n)
+        .map(|i| schnorr_verify(&sigs[i], msgs[i], &pubkeys[i]))
+        .collect()
 }
 
 /// Inner batch verify. Returns Some(true/false) on success, None on parse failure.
@@ -507,7 +549,9 @@ pub fn schnorr_sign(seckey: &[u8; 32], msg: &[u8], aux_rand32: &[u8; 32]) -> Opt
 /// BIP 340 Schnorr keypair: seckey + cached x-only pubkey (with parity already resolved).
 /// Equivalent to libsecp256k1's `secp256k1_keypair` and lets callers reuse one CT `d*G`
 /// across many signatures.
-#[derive(Clone, Copy, Debug)]
+///
+/// Not `Copy`: contains secret key material; wiped on drop via [`ZeroizeOnDrop`].
+#[derive(Clone, Debug, Zeroize, ZeroizeOnDrop)]
 pub struct Keypair {
     /// **Original** secret key bytes (NOT y-flipped). The y-flip needed to produce a
     /// signing-domain `d_adj` is decided by `pk_parity_odd` and re-applied per sign call.
@@ -582,7 +626,7 @@ pub fn schnorr_sign_with_keypair(
 
 #[inline]
 fn schnorr_sign_inner(
-    seckey: &[u8; 32],
+    _seckey: &[u8; 32],
     d: &Scalar,
     pk_parity_odd: bool,
     pk: &[u8; 32],
@@ -594,10 +638,13 @@ fn schnorr_sign_inner(
         d_adj.negate(d);
     }
 
+    // BIP340: t = bytes(d) XOR hash_aux(a) where d is the even-y-adjusted scalar.
     let aux_hash = tagged_hash_from_midstate(aux_midstate(), aux_rand32);
+    let mut d_bytes = [0u8; 32];
+    d_adj.get_b32(&mut d_bytes);
     let mut masked_key = [0u8; 32];
     for i in 0..32 {
-        masked_key[i] = seckey[i] ^ aux_hash[i];
+        masked_key[i] = d_bytes[i] ^ aux_hash[i];
     }
 
     let k_hash = {
@@ -608,6 +655,9 @@ fn schnorr_sign_inner(
         let result: [u8; 32] = h.finalize().into();
         result
     };
+    // Wipe nonce-derivation secrets from the stack as soon as unused.
+    masked_key.fill(0);
+    d_bytes.fill(0);
 
     let mut k = Scalar::zero();
     if k.set_b32(&k_hash) {
@@ -662,6 +712,16 @@ fn schnorr_sign_inner(
     let mut sig = [0u8; 64];
     sig[0..32].copy_from_slice(&r_bytes);
     sig[32..64].copy_from_slice(&s_bytes);
+
+    // Best-effort wipe of signing intermediates (Scalar is Copy; volatile so wipe isn't DCE'd).
+    unsafe {
+        std::ptr::write_volatile(&mut d_adj, Scalar::zero());
+        std::ptr::write_volatile(&mut k, Scalar::zero());
+        std::ptr::write_volatile(&mut ed, Scalar::zero());
+        std::ptr::write_volatile(&mut e, Scalar::zero());
+        std::ptr::write_volatile(&mut s, Scalar::zero());
+    }
+    s_bytes.fill(0);
 
     Some(sig)
 }

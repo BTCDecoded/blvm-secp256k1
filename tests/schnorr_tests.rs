@@ -92,6 +92,7 @@ fn test_schnorr_verify_fail_vectors() {
 
 #[test]
 fn test_schnorr_our_sign_matches_bip340_vector0() {
+    // sk=3 → even-y P (BIP340 vector 0); does not exercise d_adj = n-d'.
     let seckey = hex32("0000000000000000000000000000000000000000000000000000000000000003");
     let aux = hex32("0000000000000000000000000000000000000000000000000000000000000000");
     let msg =
@@ -105,6 +106,23 @@ fn test_schnorr_our_sign_matches_bip340_vector0() {
         our_sig, expected_sig,
         "our sign should match BIP 340 vector 0"
     );
+}
+
+/// Odd-y secret: BIP340 requires aux XOR of even-y-adjusted `d`, not raw seckey.
+#[test]
+fn test_schnorr_sign_odd_y_matches_bip340_reference() {
+    let seckey = hex32("0000000000000000000000000000000000000000000000000000000000000006");
+    let aux = hex32("0000000000000000000000000000000000000000000000000000000000000001");
+    let msg = b"odd-y bip340 vector";
+    let expected_pk = hex32("fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556");
+    let expected_sig = hex64(
+        "837d37f729bfbb0cecae28f2274e42c853cb165c1f6aba51a17eae57f3c4d92e205d669779af0378dbffd716c743e66896f5eb167559fb6db5220417ceb5bc95",
+    );
+    let pk = xonly_pubkey_from_secret(&seckey).expect("xonly");
+    assert_eq!(pk, expected_pk);
+    let sig = schnorr_sign(&seckey, msg, &aux).expect("sign");
+    assert_eq!(sig, expected_sig, "odd-y sign must match BIP340 reference");
+    assert!(schnorr_verify(&sig, msg, &pk));
 }
 
 #[test]
@@ -124,14 +142,14 @@ fn test_schnorr_sign_verify_roundtrip() {
 #[test]
 fn test_schnorr_sign_with_keypair_matches_schnorr_sign() {
     let test_cases: &[(&str, &[u8])] = &[
-        // Vector with seckey leading to even-y pubkey.
+        // Even-y pubkey (d_adj = d).
         (
             "B7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF",
             b"keypair parity test even",
         ),
-        // Vector with seckey 0x...0003 leading to odd-y pubkey (d_adj = -d).
+        // sk=6 → odd-y P before BIP340 even-y adjust (d_adj = n-d).
         (
-            "0000000000000000000000000000000000000000000000000000000000000003",
+            "0000000000000000000000000000000000000000000000000000000000000006",
             b"keypair parity test odd",
         ),
     ];

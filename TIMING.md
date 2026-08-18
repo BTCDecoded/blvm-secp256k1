@@ -75,12 +75,20 @@ Optionally inspect asm yourself: `RUSTFLAGS='--emit=asm' cargo rustc --release -
 
 **What verification does *not* replace:** cache timing, power analysis, speculative execution — those need different labs and threat models.
 
+## Secret lifetime / wipe policy
+
+- **`schnorr::Keypair`**: `Zeroize` + `ZeroizeOnDrop` (not `Copy`). Drop wipes the cached seckey.
+- **Signing stacks**: BIP340 aux mask buffers, RFC6979 `keydata`, and MuSig `rand` / `session_secrand` are explicitly zeroed after use. `Scalar` remains `Copy` (pervasive in field/group math); wiping every scalar is out of scope.
+- **GPU (`feature = "gpu"`)**: public **verify only** (msg / pubkey / sig). No seckeys on device. Init KAT must pass before device verdicts are trusted; `BLVM_SECP_GPU_HOST_BRIDGE=1` is debug-only.
+
 ## Known limitations
 
 - **`subtle::Choice`-based cmov in `ecmult_const`** is compiler-mediated CT; the `subtle` crate documents its best-effort model. For formal guarantees, use dudect/ctgrind to verify on the target platform.
 - **`Scalar::inv` fallback** on non-x86_64/aarch64 is Fermat (VT). Don't use on those targets for secret inputs.
 - **`pk_parity_odd` branch** in `schnorr_sign_inner` (`if pk_parity_odd { d_adj.negate(d) }`) is key-fixed (same parity for all signatures under a given key). The effective signing scalar is public given the public key, so this is not a per-nonce timing leak.
+- **Dudect / statistical CT tests** in `tests/ct_timing.rs` stay `#[ignore]` by default (need isolated CPU). Not part of ordinary `cargo test` gates.
+- **No signing-path blinding** of intermediates (same model as common libsecp builds).
 
 ## Performance / regression
 
-This repo does not ship Criterion benches or bench scripts. When you change hot paths, compare **before/after** on the same machine (same CPU governor and load) using your own harness — e.g. wall-clock or `perf` around representative `cargo test` subsets, or a private Criterion/binary driver. Treat a sustained **>3%** shift as worth investigating; expect ~0–3% noise from the environment alone.
+When you change hot paths, compare **before/after** on the same machine (same CPU governor and load) using `benches/crypto_ops.rs` (Criterion) or wall-clock / `perf` around representative `cargo test` subsets. Treat a sustained **>3%** shift as worth investigating; expect ~0–3% noise from the environment alone.

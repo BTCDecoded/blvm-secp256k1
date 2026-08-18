@@ -5,14 +5,15 @@
 [![CI](https://github.com/BTCDecoded/blvm-secp256k1/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/BTCDecoded/blvm-secp256k1/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-Pure Rust reimplementation of libsecp256k1 with vendored ASM for hot paths. No FFI to C — all logic in Rust. Performance-optimized secp256k1 for Bitcoin and Ethereum.
+Pure Rust reimplementation of libsecp256k1 with vendored ASM for hot paths. Optional `gpu` feature links in-tree CUDA (`cuda/`) for batch ECDSA/Schnorr verify (requires nvcc). Performance-optimized secp256k1 for Bitcoin and Ethereum.
 
 Precomputed ecmult tables are committed in `src/ecmult_precomputed.rs` (no build-time generation). To regenerate: copy `precomputed_ecmult.c` from upstream libsecp256k1 `src/` into `build/`, then `cargo run --example regenerate_precomputed`.
 
 ## Features
 
 - **Context-free API** — Stateless, no `Secp256k1<C>` context. All functions take raw bytes, points, or scalars directly.
-- **Pure Rust + ASM** — Field and scalar assembly for ARM32 and x86_64 where it matters; no C dependencies at runtime.
+- **Pure Rust + ASM** — Field and scalar assembly for ARM32 and x86_64 where it matters.
+- **Optional CUDA (`gpu`)** — In-tree batch verify under `cuda/` (see `cuda/README.md`). No UltrafastSecp256k1.
 - **Parity with libsecp256k1** — ECDSA, Schnorr (BIP 340), MuSig2, ElligatorSwift (BIP 324), ECDH, Taproot.
 
 ## Side-channel and timing (constant-time) contract

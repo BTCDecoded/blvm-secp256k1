@@ -33,6 +33,8 @@ pub struct Ge {
 }
 
 /// Compact storage for affine point. Matches libsecp256k1 ge_storage.
+/// Layout: x.n[4] || y.n[4] as LE u64 limbs (64 bytes) — same as CUDA `GeStorage` / `Fe.d[4]`.
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct GeStorage {
     pub x: FeStorage,

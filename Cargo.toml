@@ -18,6 +18,8 @@ path = "src/lib.rs"
 subtle = "2.5"
 num-bigint = "0.4"
 num-integer = "0.1"
+crossbeam-channel = "0.5"
+zeroize = { version = "1.8", features = ["derive"] }
 
 # sha2-asm doesn't support Windows; split by target to avoid it there
 [target.'cfg(not(target_os = "windows"))'.dependencies]
@@ -39,6 +41,11 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "crypto_ops"
 harness = false
 
+[[bench]]
+name = "gpu_batch"
+harness = false
+required-features = ["gpu"]
+
 [profile.release]
 lto = false
 codegen-units = 16
@@ -46,4 +53,9 @@ codegen-units = 16
 [features]
 default = ["std"]
 std = []
+# Optional in-tree CUDA ECDSA/Schnorr batch verify (cuda/ via nvcc). Runtime
+# default-on when CUDA/ctx succeed; opt-out BLVM_SECP_GPU=0; threshold
+# BLVM_SECP_GPU_BATCH_MIN (default 1024). Launch/init failure → sticky CPU failover.
+# Requires CUDA toolkit (nvcc). See cuda/README.md.
+gpu = []
 
