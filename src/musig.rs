@@ -12,7 +12,7 @@ use crate::ecdsa::{ge_from_compressed, ge_to_compressed, pubkey_from_secret};
 use crate::ecmult;
 use crate::ecmult_gen_const;
 use crate::field::FieldElement;
-use crate::group::{Ge, Gej, generator_g};
+use crate::group::{generator_g, Ge, Gej};
 use crate::scalar::Scalar;
 use crate::schnorr;
 
@@ -419,11 +419,12 @@ pub fn nonce_gen(
         }
     }
 
+    // BIP327: if sk present, rand = sk XOR hash_MuSig/aux(rand') where rand' = session_secrand.
     let mut rand = [0u8; 32];
-    if let Some(_sk) = seckey {
+    if let Some(sk) = seckey {
         let aux_hash = tagged_hash(TAG_MUSIG_AUX, session_secrand32);
         for i in 0..32 {
-            rand[i] = session_secrand32[i] ^ aux_hash[i];
+            rand[i] = sk[i] ^ aux_hash[i];
         }
     } else {
         rand.copy_from_slice(session_secrand32);
@@ -436,11 +437,12 @@ pub fn nonce_gen(
     data.extend_from_slice(&rand);
     data.extend(nonce_helper_1(Some(pubkey33)));
     data.extend(nonce_helper_1(aggpk_slice));
-    data.push(if msg32.is_some() { 1 } else { 0 });
+    // BIP327: m_prefixed = 0x00 if absent, else 0x01 || BE64(len) || m.
     if let Some(m) = msg32 {
+        data.push(1);
         data.extend(nonce_helper_8(Some(m)));
     } else {
-        data.extend(nonce_helper_8(None));
+        data.push(0);
     }
     data.extend(nonce_helper_4(extra_input32.map(|e| e.as_slice())));
 
@@ -483,7 +485,8 @@ pub fn nonce_gen(
     k1.get_b32((&mut secnonce_k[0..32]).try_into().unwrap());
     k2.get_b32((&mut secnonce_k[32..64]).try_into().unwrap());
 
-    session_secrand32.copy_from_slice(&[0u8; 32]);
+    session_secrand32.fill(0);
+    rand.fill(0);
 
     Some(((secnonce_k, *pubkey33), pubnonce))
 }

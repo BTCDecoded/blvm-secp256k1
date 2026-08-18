@@ -317,8 +317,8 @@ impl Scalar {
             d: [
                 (0xD765CDA8u64 << 32) | 0x3DB1562C,
                 (0x8A280AC5u64 << 32) | 0x0774346D,
-                (0xFFFFFFFFu64 << 32) | 0xFFFFFFFE,
-                (0xFFFFFFFFu64 << 32) | 0xFFFFFFFF,
+                0xFFFFFFFFFFFFFFFE,
+                0xFFFFFFFFFFFFFFFF,
             ],
         };
         const G1: Scalar = Scalar {
@@ -410,7 +410,7 @@ impl Scalar {
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
-            use crate::modinv64::{SECP256K1_SCALAR_MODINV_MODINFO, modinv64};
+            use crate::modinv64::{modinv64, SECP256K1_SCALAR_MODINV_MODINFO};
             let mut x = scalar_to_signed62(a);
             modinv64(&mut x, &SECP256K1_SCALAR_MODINV_MODINFO);
             scalar_from_signed62(self, &x);

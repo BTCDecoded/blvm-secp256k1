@@ -35,14 +35,16 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
+      # Default features are CPU-only. Do not `--all-features` here: that enables
+      # `gpu` and requires nvcc. GPU CI is a separate job when a CUDA runner exists.
       - name: Build
         run: cargo build --release
 
       - name: Test
-        run: cargo test --all-features
+        run: cargo test
 
       - name: Clippy
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Format
         run: cargo fmt --all -- --check
@@ -167,8 +169,8 @@ jobs:
       - name: Pre-release smoke test
         if: steps.gate.outputs.do_release == 'true'
         run: |
-          cargo check --all-features --quiet
-          cargo test --all-features --lib --quiet -- --test-threads=1
+          cargo check --quiet
+          cargo test --lib --quiet -- --test-threads=1
 
       - name: Commit version bump
         if: steps.gate.outputs.do_release == 'true'
