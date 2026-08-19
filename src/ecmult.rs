@@ -53,9 +53,8 @@ pub(crate) fn pre_g_table_bytes() -> (&'static [u8], &'static [u8]) {
     debug_assert_eq!(PRE_G.len(), 8192);
     debug_assert_eq!(PRE_G_128.len(), 8192);
     // SAFETY: GeStorage is #[repr(C)]; FeStorage is #[repr(C)] 4×u64; arrays are static.
-    let a = unsafe {
-        core::slice::from_raw_parts(PRE_G.as_ptr().cast::<u8>(), PRE_G.len() * ENTRY)
-    };
+    let a =
+        unsafe { core::slice::from_raw_parts(PRE_G.as_ptr().cast::<u8>(), PRE_G.len() * ENTRY) };
     let b = unsafe {
         core::slice::from_raw_parts(PRE_G_128.as_ptr().cast::<u8>(), PRE_G_128.len() * ENTRY)
     };

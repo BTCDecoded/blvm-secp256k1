@@ -9,7 +9,7 @@
 //! To regenerate: `cargo run --example regenerate_precomputed`
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
@@ -76,7 +76,7 @@ fn gpu_build_disabled() -> bool {
     env::var("BLVM_SECP256K1_NO_GPU").is_ok_and(|v| v == "1")
 }
 
-fn try_enable_cuda(manifest_dir: &PathBuf) {
+fn try_enable_cuda(manifest_dir: &Path) {
     if gpu_build_disabled() {
         if gpu_required() {
             panic!(
@@ -137,18 +137,39 @@ fn find_nvcc() -> Option<PathBuf> {
     None
 }
 
-fn build_cuda(manifest_dir: &PathBuf, nvcc: &PathBuf) -> Result<(), String> {
+fn build_cuda(manifest_dir: &Path, nvcc: &Path) -> Result<(), String> {
     let cuda_dir = manifest_dir.join("cuda");
     let src = cuda_dir.join("src").join("device.cu");
     let include = cuda_dir.join("include");
     println!("cargo:rerun-if-changed={}", src.display());
-    println!("cargo:rerun-if-changed={}", include.join("blvm_secp_gpu.h").display());
-    println!("cargo:rerun-if-changed={}", include.join("blvm_field.cuh").display());
-    println!("cargo:rerun-if-changed={}", include.join("blvm_scalar.cuh").display());
-    println!("cargo:rerun-if-changed={}", include.join("blvm_point.cuh").display());
-    println!("cargo:rerun-if-changed={}", include.join("blvm_ecmult.cuh").display());
-    println!("cargo:rerun-if-changed={}", include.join("blvm_verify.cuh").display());
-    println!("cargo:rerun-if-changed={}", include.join("blvm_sha256.cuh").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("blvm_secp_gpu.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("blvm_field.cuh").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("blvm_scalar.cuh").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("blvm_point.cuh").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("blvm_ecmult.cuh").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("blvm_verify.cuh").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        include.join("blvm_sha256.cuh").display()
+    );
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").map_err(|e| e.to_string())?);
     let obj = out_dir.join("blvm_secp_gpu.o");

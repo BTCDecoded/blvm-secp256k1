@@ -410,7 +410,7 @@ impl Scalar {
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
-            use crate::modinv64::{modinv64, SECP256K1_SCALAR_MODINV_MODINFO};
+            use crate::modinv64::{SECP256K1_SCALAR_MODINV_MODINFO, modinv64};
             let mut x = scalar_to_signed62(a);
             modinv64(&mut x, &SECP256K1_SCALAR_MODINV_MODINFO);
             scalar_from_signed62(self, &x);

@@ -181,31 +181,30 @@ impl GpuTimers {
         self.kernel_ns.fetch_add(kernel_ns, Ordering::Relaxed);
         let calls = self.calls.load(Ordering::Relaxed);
         let last = self.last_log_calls.load(Ordering::Relaxed);
-        if calls == 1 || calls.saturating_sub(last) >= 64 {
-            if self
+        if (calls == 1 || calls.saturating_sub(last) >= 64)
+            && self
                 .last_log_calls
                 .compare_exchange(last, calls, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
-            {
-                let snap = self.snapshot();
-                let total = snap.lock_ns + snap.pack_ns + snap.kernel_ns;
-                let ms = |ns: u64| ns as f64 / 1_000_000.0;
-                eprintln!(
-                    "[BLVM_SECP_GPU_TIMERS] calls={} sigs={} lock_ms={:.1} pack_ms={:.1} \
-                     kernel_ms={:.1} total_ms={:.1} avg_batch={:.0}",
-                    snap.calls,
-                    snap.sigs,
-                    ms(snap.lock_ns),
-                    ms(snap.pack_ns),
-                    ms(snap.kernel_ns),
-                    ms(total),
-                    if snap.calls > 0 {
-                        snap.sigs as f64 / snap.calls as f64
-                    } else {
-                        0.0
-                    }
-                );
-            }
+        {
+            let snap = self.snapshot();
+            let total = snap.lock_ns + snap.pack_ns + snap.kernel_ns;
+            let ms = |ns: u64| ns as f64 / 1_000_000.0;
+            eprintln!(
+                "[BLVM_SECP_GPU_TIMERS] calls={} sigs={} lock_ms={:.1} pack_ms={:.1} \
+                 kernel_ms={:.1} total_ms={:.1} avg_batch={:.0}",
+                snap.calls,
+                snap.sigs,
+                ms(snap.lock_ns),
+                ms(snap.pack_ns),
+                ms(snap.kernel_ns),
+                ms(total),
+                if snap.calls > 0 {
+                    snap.sigs as f64 / snap.calls as f64
+                } else {
+                    0.0
+                }
+            );
         }
     }
 
@@ -242,9 +241,7 @@ fn upload_pre_g(ctx: *mut GpuCtx) -> Result<(), c_int> {
     const N: usize = 8192;
     debug_assert_eq!(pre_g.len(), N * 64);
     debug_assert_eq!(pre_g_128.len(), N * 64);
-    let rc = unsafe {
-        blvm_secp_gpu_ctx_set_pre_g(ctx, pre_g.as_ptr(), pre_g_128.as_ptr(), N)
-    };
+    let rc = unsafe { blvm_secp_gpu_ctx_set_pre_g(ctx, pre_g.as_ptr(), pre_g_128.as_ptr(), N) };
     if rc != BLVM_SECP_GPU_OK {
         return Err(rc);
     }
@@ -262,9 +259,7 @@ fn try_create_one(device_index: u32) -> Option<GpuState> {
             return None;
         }
         if let Err(rc) = upload_pre_g(ctx) {
-            eprintln!(
-                "[BLVM_SECP_GPU] PRE_G upload failed device={device_index} rc={rc}"
-            );
+            eprintln!("[BLVM_SECP_GPU] PRE_G upload failed device={device_index} rc={rc}");
             blvm_secp_gpu_ctx_destroy(ctx);
             return None;
         }
@@ -495,7 +490,9 @@ fn ecdsa_host_bridge_fill(
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         out.push(crate::ecdsa::ecdsa_verify_one_compact(
-            &sigs[i], &msgs[i], &pubkeys[i],
+            &sigs[i],
+            &msgs[i],
+            &pubkeys[i],
         ));
     }
     out
@@ -510,7 +507,9 @@ fn schnorr_host_bridge_fill(
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         out.push(crate::schnorr::schnorr_verify(
-            &sigs[i], msgs[i], &pubkeys[i],
+            &sigs[i],
+            msgs[i],
+            &pubkeys[i],
         ));
     }
     out
@@ -580,11 +579,7 @@ fn submitter_hub() -> Option<&'static SubmitterHub> {
                 .name(format!("blvm-secp-gpu-{w}"))
                 .spawn(move || {
                     while let Ok(job) = rx.recv() {
-                        let n = job
-                            .sigs
-                            .len()
-                            .min(job.msgs.len())
-                            .min(job.pubkeys.len());
+                        let n = job.sigs.len().min(job.msgs.len()).min(job.pubkeys.len());
                         if n == 0 {
                             let _ = job.reply.send(Some(Vec::new()));
                             continue;
@@ -667,7 +662,11 @@ fn ecdsa_verify_batch_ungated(
     n: usize,
 ) -> Option<Vec<bool>> {
     if gpu_submitters_enabled() {
-        let rx = enqueue_ecdsa_job(msgs[..n].to_vec(), pubkeys[..n].to_vec(), sigs[..n].to_vec())?;
+        let rx = enqueue_ecdsa_job(
+            msgs[..n].to_vec(),
+            pubkeys[..n].to_vec(),
+            sigs[..n].to_vec(),
+        )?;
         return rx.recv().ok().flatten();
     }
 

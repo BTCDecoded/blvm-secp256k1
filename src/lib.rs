@@ -14,13 +14,13 @@
 pub mod ecdh;
 pub mod ecdsa;
 pub mod ecmult;
+mod ecmult_const;
+mod ecmult_gen_comb;
 #[cfg(blvm_secp_gpu)]
 pub mod gpu;
 #[cfg(not(blvm_secp_gpu))]
 #[path = "gpu_stub.rs"]
 pub mod gpu;
-mod ecmult_const;
-mod ecmult_gen_comb;
 pub use ecmult_const::ecmult_const;
 pub use ecmult_gen_comb::{
     ecmult_gen_const_comb as ecmult_gen_const, precompute as ecmult_gen_precompute,

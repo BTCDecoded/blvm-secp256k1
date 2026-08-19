@@ -71,11 +71,7 @@ fn ecdsa_verify_batch_cpu(sigs: &[[u8; 64]], msgs: &[[u8; 32]], pubkeys: &[[u8; 
             ge_from_compressed(&pubkeys[0]),
             {
                 let mut m = Scalar::zero();
-                if m.set_b32(&msgs[0]) {
-                    None
-                } else {
-                    Some(m)
-                }
+                if m.set_b32(&msgs[0]) { None } else { Some(m) }
             },
         ) {
             return ecdsa_sig_verify(&sigr, &sigs_scalar, &pk, &msg);
@@ -1100,8 +1096,7 @@ pub fn verify_ecdsa_direct(
     if crate::gpu::gpu_available() {
         let compact = ecdsa_sig_serialize_compact(&sigr, &sigs);
         let pk33 = ge_to_compressed(&pk);
-        if let Some(results) =
-            crate::gpu::try_ecdsa_verify_batch(&[compact], &[*msg_hash], &[pk33])
+        if let Some(results) = crate::gpu::try_ecdsa_verify_batch(&[compact], &[*msg_hash], &[pk33])
         {
             return Some(results.first().copied().unwrap_or(false));
         }

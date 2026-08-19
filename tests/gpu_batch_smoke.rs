@@ -7,7 +7,7 @@ use blvm_secp256k1::ecdsa::{
     ecdsa_sign_compact_rfc6979, ecdsa_verify_one_compact, ge_to_compressed, pubkey_from_secret,
 };
 use blvm_secp256k1::gpu::{
-    gpu_available, try_ecdsa_verify_batch, try_schnorr_verify_batch, GPU_BATCH_MIN,
+    GPU_BATCH_MIN, gpu_available, try_ecdsa_verify_batch, try_schnorr_verify_batch,
 };
 use blvm_secp256k1::scalar::Scalar;
 use blvm_secp256k1::schnorr::{schnorr_sign, schnorr_verify, xonly_pubkey_from_secret};

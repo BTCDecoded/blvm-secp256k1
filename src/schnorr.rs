@@ -117,7 +117,8 @@ pub fn xonly_pubkey_from_secret(seckey: &[u8; 32]) -> Option<[u8; 32]> {
 pub fn schnorr_verify(sig64: &[u8; 64], msg: &[u8], pubkey_x32: &[u8; 32]) -> bool {
     // GPU path requires 32-byte messages (BIP-340). Fall through to CPU otherwise.
     if msg.len() == 32 && crate::gpu::gpu_available() {
-        if let Some(results) = crate::gpu::try_schnorr_verify_batch(&[*sig64], &[msg], &[*pubkey_x32])
+        if let Some(results) =
+            crate::gpu::try_schnorr_verify_batch(&[*sig64], &[msg], &[*pubkey_x32])
         {
             return results.first().copied().unwrap_or(false);
         }

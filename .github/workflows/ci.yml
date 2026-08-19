@@ -35,8 +35,9 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
-      # Default features are CPU-only. Do not `--all-features` here: that enables
-      # `gpu` and requires nvcc. GPU CI is a separate job when a CUDA runner exists.
+      # Default auto-links CUDA when nvcc is present (this self-hosted runner).
+      # `--features gpu` still *requires* nvcc. Do not `--all-features` on a
+      # CPU-only runner; use BLVM_SECP256K1_NO_GPU=1 to force CPU.
       - name: Build
         run: cargo build --release
 

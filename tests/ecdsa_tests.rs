@@ -459,11 +459,10 @@ fn test_ecdsa_sig_normalize() {
     assert!(s_high.is_one()); // n-1 normalized = 1 (low-S)
 }
 
-
 #[test]
 fn ecdsa_verify_batch_results_all_valid_and_mixed() {
     use blvm_secp256k1::ecdsa::{
-        ecdsa_sign_compact_rfc6979, ecdsa_sig_parse_compact, ecdsa_sig_verify,
+        ecdsa_sig_parse_compact, ecdsa_sig_verify, ecdsa_sign_compact_rfc6979,
         ecdsa_verify_batch_results, ge_from_compressed, ge_to_compressed, pubkey_from_secret,
     };
     use blvm_secp256k1::scalar::Scalar;

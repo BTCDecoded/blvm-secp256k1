@@ -19,7 +19,7 @@ use blvm_secp256k1::gpu::{
 };
 use blvm_secp256k1::scalar::Scalar;
 use blvm_secp256k1::schnorr::{schnorr_sign, schnorr_verify, xonly_pubkey_from_secret};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 fn scalar_from_b32(b: &[u8; 32]) -> Scalar {
     let mut s = Scalar::zero();
@@ -152,7 +152,9 @@ fn print_quick_summary(sizes: &[usize]) {
         let t0 = Instant::now();
         for _ in 0..iters {
             let refs: Vec<&[u8]> = s.msgs.iter().map(|m| m.as_slice()).collect();
-            black_box(try_schnorr_verify_batch_ungated(&s.sigs, &refs, &s.pks).expect("gpu schnorr"));
+            black_box(
+                try_schnorr_verify_batch_ungated(&s.sigs, &refs, &s.pks).expect("gpu schnorr"),
+            );
         }
         let s_gpu = t0.elapsed() / iters as u32;
 
