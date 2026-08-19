@@ -53,9 +53,10 @@ codegen-units = 16
 [features]
 default = ["std"]
 std = []
-# Optional in-tree CUDA ECDSA/Schnorr batch verify (cuda/ via nvcc). Runtime
-# default-on when CUDA/ctx succeed; opt-out BLVM_SECP_GPU=0; threshold
-# BLVM_SECP_GPU_BATCH_MIN (default 1024). Launch/init failure → sticky CPU failover.
-# Requires CUDA toolkit (nvcc). See cuda/README.md.
+# CUDA is auto-linked when nvcc is found (not a Cargo default — CI without a
+# toolkit stays CPU). Runtime: GPU if a device inits, else CPU.
+# Opt out at runtime: BLVM_SECP_GPU=0. Opt out at build: BLVM_SECP256K1_NO_GPU=1.
+# This feature *requires* nvcc (fails the build if CUDA is missing).
+# Threshold BLVM_SECP_GPU_BATCH_MIN (default 1024). See cuda/README.md.
 gpu = []
 

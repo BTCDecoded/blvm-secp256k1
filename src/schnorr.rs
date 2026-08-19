@@ -116,7 +116,6 @@ pub fn xonly_pubkey_from_secret(seckey: &[u8; 32]) -> Option<[u8; 32]> {
 #[inline(always)]
 pub fn schnorr_verify(sig64: &[u8; 64], msg: &[u8], pubkey_x32: &[u8; 32]) -> bool {
     // GPU path requires 32-byte messages (BIP-340). Fall through to CPU otherwise.
-    #[cfg(feature = "gpu")]
     if msg.len() == 32 && crate::gpu::gpu_available() {
         if let Some(results) = crate::gpu::try_schnorr_verify_batch(&[*sig64], &[msg], &[*pubkey_x32])
         {
@@ -187,7 +186,6 @@ pub fn schnorr_verify(sig64: &[u8; 64], msg: &[u8], pubkey_x32: &[u8; 32]) -> bo
 /// Returns true if all signatures are valid, false if any is invalid.
 /// Uses ecmult_multi for both sum_left and sum_right.
 pub fn schnorr_verify_batch(sigs: &[[u8; 64]], msgs: &[&[u8]], pubkeys: &[[u8; 32]]) -> bool {
-    #[cfg(feature = "gpu")]
     if let Some(results) = crate::gpu::try_schnorr_verify_batch(sigs, msgs, pubkeys) {
         return results.iter().all(|&ok| ok);
     }
@@ -221,7 +219,6 @@ pub fn schnorr_verify_batch_results(
         return Vec::new();
     }
 
-    #[cfg(feature = "gpu")]
     if let Some(results) = crate::gpu::try_schnorr_verify_batch(sigs, msgs, pubkeys) {
         return results;
     }

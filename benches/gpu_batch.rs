@@ -1,4 +1,4 @@
-//! CPU vs GPU batch verify (feature `gpu`).
+//! CPU vs GPU batch verify (`cfg(blvm_secp_gpu)` / feature `gpu`).
 //!
 //! ```bash
 //! cargo bench --features gpu --bench gpu_batch
@@ -6,7 +6,7 @@
 //! cargo bench --features gpu --bench gpu_batch -- --sample-size 20 --warm-up-time 1 --measurement-time 2
 //! ```
 
-#![cfg(feature = "gpu")]
+#![cfg(any(feature = "gpu", blvm_secp_gpu))]
 
 use std::hint::black_box;
 use std::time::Instant;

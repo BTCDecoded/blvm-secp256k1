@@ -1,7 +1,7 @@
 //! Smoke test for optional `gpu` feature (in-tree CUDA).
 //! Skips when no GPU context can be created.
 
-#![cfg(feature = "gpu")]
+#![cfg(any(feature = "gpu", blvm_secp_gpu))]
 
 use blvm_secp256k1::ecdsa::{
     ecdsa_sign_compact_rfc6979, ecdsa_verify_one_compact, ge_to_compressed, pubkey_from_secret,

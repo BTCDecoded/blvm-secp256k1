@@ -1,7 +1,8 @@
 //! commons-secp256k1: Rust reimplementation of libsecp256k1
 //!
 //! Pure Rust implementation with vendored ASM for hot paths (ARM32 field, x86_64 scalar).
-//! Optional `gpu` feature links in-tree CUDA (`cuda/`) for batch verify.
+//! CUDA batch verify is auto-linked when `nvcc` is found (`cfg(blvm_secp_gpu)`).
+//! Runtime uses GPU if a device inits, else CPU. Feature `gpu` requires CUDA.
 //!
 //! ## Context-free API
 //!
@@ -13,7 +14,10 @@
 pub mod ecdh;
 pub mod ecdsa;
 pub mod ecmult;
-#[cfg(feature = "gpu")]
+#[cfg(blvm_secp_gpu)]
+pub mod gpu;
+#[cfg(not(blvm_secp_gpu))]
+#[path = "gpu_stub.rs"]
 pub mod gpu;
 mod ecmult_const;
 mod ecmult_gen_comb;

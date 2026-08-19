@@ -51,10 +51,9 @@ fn ecdsa_const_p_minus_order() -> &'static FieldElement {
 /// Uses random linear combination: sum z_i*(u1_i*G + u2_i*P_i) == sum z_i*R_i.
 /// z_i = r_i + s_i (deterministic from sig). Rejects high-S.
 ///
-/// With feature `gpu`, large batches (≥ [`crate::gpu::GPU_BATCH_MIN`]) try native CUDA
-/// first and collapse per-item results; GPU failure falls back to CPU.
+/// Large batches (≥ [`crate::gpu::GPU_BATCH_MIN`]) try native CUDA when linked
+/// and a device is up; GPU miss falls back to CPU.
 pub fn ecdsa_verify_batch(sigs: &[[u8; 64]], msgs: &[[u8; 32]], pubkeys: &[[u8; 33]]) -> bool {
-    #[cfg(feature = "gpu")]
     if let Some(results) = crate::gpu::try_ecdsa_verify_batch(sigs, msgs, pubkeys) {
         return results.iter().all(|&ok| ok);
     }
@@ -106,7 +105,6 @@ pub fn ecdsa_verify_batch_results(
         return Vec::new();
     }
 
-    #[cfg(feature = "gpu")]
     if let Some(results) = crate::gpu::try_ecdsa_verify_batch(sigs, msgs, pubkeys) {
         return results;
     }
@@ -1098,8 +1096,7 @@ pub fn verify_ecdsa_direct(
     if msg.set_b32(msg_hash) {
         return None;
     }
-    // Prefer GPU when built with `gpu` and CUDA is up; CPU on any miss.
-    #[cfg(feature = "gpu")]
+    // Prefer GPU when CUDA is linked and a device is up; CPU on any miss.
     if crate::gpu::gpu_available() {
         let compact = ecdsa_sig_serialize_compact(&sigr, &sigs);
         let pk33 = ge_to_compressed(&pk);

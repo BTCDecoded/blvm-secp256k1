@@ -79,7 +79,7 @@ Optionally inspect asm yourself: `RUSTFLAGS='--emit=asm' cargo rustc --release -
 
 - **`schnorr::Keypair`**: `Zeroize` + `ZeroizeOnDrop` (not `Copy`). Drop wipes the cached seckey.
 - **Signing stacks**: BIP340 aux mask buffers, RFC6979 `keydata`, and MuSig `rand` / `session_secrand` are explicitly zeroed after use. `Scalar` remains `Copy` (pervasive in field/group math); wiping every scalar is out of scope.
-- **GPU (`feature = "gpu"`)**: public **verify only** (msg / pubkey / sig). No seckeys on device. Init KAT must pass before device verdicts are trusted; `BLVM_SECP_GPU_HOST_BRIDGE=1` is debug-only.
+- **GPU** (auto-linked when `nvcc` is found, or feature `gpu`): public **verify only** (msg / pubkey / sig). No seckeys on device. Init KAT must pass before device verdicts are trusted; `BLVM_SECP_GPU_HOST_BRIDGE=1` is debug-only. Runtime CPU fallback if no device.
 
 ## Known limitations
 

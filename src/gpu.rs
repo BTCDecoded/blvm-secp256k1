@@ -1,4 +1,4 @@
-//! Optional in-tree CUDA GPU batch verify (`feature = "gpu"`).
+//! In-tree CUDA GPU batch verify (`cfg(blvm_secp_gpu)`; auto when nvcc is found).
 //!
 //! Links static `libblvm_secp_gpu` built from `cuda/` via nvcc (see `build.rs`).
 //! No UltrafastSecp256k1 / `libufsecp`.

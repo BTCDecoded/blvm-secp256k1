@@ -1,11 +1,15 @@
-# blvm-secp256k1 CUDA (`feature = "gpu"`)
+# blvm-secp256k1 CUDA
 
 BLVM-owned CUDA batch ECDSA / BIP-340 Schnorr verify. No UltrafastSecp256k1 / `libufsecp`.
+
+Default `cargo build` **auto-links** this tree when `nvcc` is found. Runtime uses GPU if a device inits, else CPU. Feature `gpu` *requires* that compile (fails if nvcc is missing). Build opt-out: `BLVM_SECP256K1_NO_GPU=1`.
 
 ## Build
 
 ```bash
-# Requires nvcc + CUDA runtime (Zeus: /opt/cuda)
+# Auto when nvcc is on PATH / CUDA_PATH / /opt/cuda (Zeus)
+cargo test
+# Force-fail if CUDA is missing:
 cargo test --features gpu
 ```
 
