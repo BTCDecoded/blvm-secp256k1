@@ -87,6 +87,20 @@ fn try_enable_cuda(manifest_dir: &Path) {
         return;
     }
 
+    // nvcc and libcudart on this host are not the cross target's toolchain.
+    // A Windows or aarch64 cross link would otherwise fail looking for cudart.
+    let host = env::var("HOST").unwrap_or_default();
+    let target = env::var("TARGET").unwrap_or_default();
+    if !host.is_empty() && host != target {
+        if gpu_required() {
+            panic!(
+                "feature gpu is host-only (host {host}, target {target}). \
+                 Cross builds use the CPU verifier."
+            );
+        }
+        return;
+    }
+
     let Some(nvcc) = find_nvcc() else {
         if gpu_required() {
             panic!(
