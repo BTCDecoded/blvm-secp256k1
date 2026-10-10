@@ -793,9 +793,18 @@ pub fn ge_from_compressed(bytes: &[u8; 33]) -> Option<Ge> {
     Some(ge)
 }
 
-/// Parse 65-byte uncompressed pubkey (0x04 || x || y) to Ge. Returns None if invalid.
+/// Uncompressed point tag. Hybrid tags carry the same x||y and also the y parity.
+const PUBKEY_UNCOMPRESSED: u8 = 0x04;
+const PUBKEY_HYBRID_EVEN: u8 = 0x06;
+const PUBKEY_HYBRID_ODD: u8 = 0x07;
+
+/// Parse a 65-byte public key to Ge.
+///
+/// `0x04` is uncompressed. `0x06` and `0x07` are hybrid: the same x||y, and the
+/// tag must match the parity of y. A mismatched hybrid tag is not a public key.
 pub fn ge_from_uncompressed(bytes: &[u8; 65]) -> Option<Ge> {
-    if bytes[0] != 0x04 {
+    let tag = bytes[0];
+    if tag != PUBKEY_UNCOMPRESSED && tag != PUBKEY_HYBRID_EVEN && tag != PUBKEY_HYBRID_ODD {
         return None;
     }
     let mut x_bytes = [0u8; 32];
@@ -805,6 +814,10 @@ pub fn ge_from_uncompressed(bytes: &[u8; 65]) -> Option<Ge> {
     let mut x = FieldElement::zero();
     let mut y = FieldElement::zero();
     if !x.set_b32_limit(&x_bytes) || !y.set_b32_limit(&y_bytes) {
+        return None;
+    }
+    let y_odd = y_bytes[31] & 1 == 1;
+    if tag != PUBKEY_UNCOMPRESSED && y_odd != (tag == PUBKEY_HYBRID_ODD) {
         return None;
     }
     let mut ge = Ge {
