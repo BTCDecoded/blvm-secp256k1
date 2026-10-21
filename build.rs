@@ -2,8 +2,9 @@
 //!
 //! - Compiles field_10x26_arm.s on 32-bit ARM targets
 //! - Compiles scalar_4x64_x86_64.s on x86_64
-//! - Auto-links in-tree CUDA (`cuda/`) when nvcc is found → libblvm_secp_gpu
-//!   (`cfg(blvm_secp_gpu)`). Feature `gpu` *requires* that compile.
+//! - Links in-tree CUDA (`cuda/`) → libblvm_secp_gpu (`cfg(blvm_secp_gpu)`) only with
+//!   feature `gpu`. Without it the build never looks for nvcc, so a default build has
+//!   no `libcudart` dependency even on a host that has the CUDA toolkit.
 //!
 //! Precomputed ecmult tables are committed in src/ecmult_precomputed.rs.
 //! To regenerate: `cargo run --example regenerate_precomputed`
@@ -77,6 +78,12 @@ fn gpu_build_disabled() -> bool {
 }
 
 fn try_enable_cuda(manifest_dir: &Path) {
+    // Opt-in only. Auto-linking whenever nvcc was on the build host put
+    // `libcudart.so.13` in NEEDED of release binaries that then failed to start
+    // on every machine without the CUDA runtime.
+    if !gpu_required() {
+        return;
+    }
     if gpu_build_disabled() {
         if gpu_required() {
             panic!(

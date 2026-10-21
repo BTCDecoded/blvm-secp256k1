@@ -53,10 +53,11 @@ codegen-units = 16
 [features]
 default = ["std"]
 std = []
-# CUDA is auto-linked when nvcc is found (not a Cargo default — CI without a
-# toolkit stays CPU). Runtime: GPU if a device inits, else CPU.
-# Opt out at runtime: BLVM_SECP_GPU=0. Opt out at build: BLVM_SECP256K1_NO_GPU=1.
-# This feature *requires* nvcc (fails the build if CUDA is missing).
+# CUDA batch verify. Off by default: only this feature compiles and links CUDA,
+# so default builds never depend on libcudart, even where nvcc is installed.
+# Requires nvcc (fails the build if CUDA is missing) and makes the binary need
+# the CUDA runtime at load time. Runtime: GPU if a device inits, else CPU.
+# Opt out at runtime: BLVM_SECP_GPU=0.
 # Threshold BLVM_SECP_GPU_BATCH_MIN (default 1024). See cuda/README.md.
 gpu = []
 
