@@ -658,9 +658,7 @@ fn schnorr_sign_inner(
     d_bytes.fill(0);
 
     let mut k = Scalar::zero();
-    if k.set_b32(&k_hash) {
-        return None;
-    }
+    let _ = k.set_b32(&k_hash);
     if k.is_zero() {
         return None;
     }

@@ -71,7 +71,8 @@ fn ecdsa_verify_batch_cpu(sigs: &[[u8; 64]], msgs: &[[u8; 32]], pubkeys: &[[u8; 
             ge_from_compressed(&pubkeys[0]),
             {
                 let mut m = Scalar::zero();
-                if m.set_b32(&msgs[0]) { None } else { Some(m) }
+                let _ = m.set_b32(&msgs[0]);
+                Some(m)
             },
         ) {
             return ecdsa_sig_verify(&sigr, &sigs_scalar, &pk, &msg);
@@ -130,9 +131,7 @@ pub fn ecdsa_verify_one_compact(sig: &[u8; 64], msg: &[u8; 32], pubkey: &[u8; 33
         None => return false,
     };
     let mut m = Scalar::zero();
-    if m.set_b32(msg) {
-        return false;
-    }
+    let _ = m.set_b32(msg);
     ecdsa_sig_verify(&sigr, &sigs_scalar, &pk, &m)
 }
 
@@ -198,9 +197,7 @@ fn ecdsa_verify_batch_stack(
             None => return false,
         };
         let mut m = Scalar::zero();
-        if m.set_b32(&msgs[i]) {
-            return false;
-        }
+        let _ = m.set_b32(&msgs[i]);
 
         let mut sn = Scalar::zero();
         sn.inv_var(&sigs_scalar);
@@ -285,9 +282,7 @@ fn ecdsa_verify_batch_heap(
             None => return false,
         };
         let mut m = Scalar::zero();
-        if m.set_b32(&msgs[i]) {
-            return false;
-        }
+        let _ = m.set_b32(&msgs[i]);
 
         let mut sn = Scalar::zero();
         sn.inv_var(&sigs_scalar);
@@ -348,7 +343,7 @@ fn ecdsa_verify_batch_heap(
 /// Verify ECDSA signature (r,s) against pubkey and message hash.
 /// Returns true if valid. Does not enforce low-S (accepts both).
 pub fn ecdsa_sig_verify(sigr: &Scalar, sigs: &Scalar, pubkey: &Ge, message: &Scalar) -> bool {
-    if sigr.is_zero() || sigs.is_zero() {
+    if sigr.is_zero() || sigs.is_zero() || sigs.is_high() || pubkey.infinity {
         return false;
     }
 
@@ -399,7 +394,7 @@ pub fn ecdsa_sig_verify_exhaustive(
     pubkey: &Ge,
     message: &Scalar,
 ) -> bool {
-    if sigr.is_zero() || sigs.is_zero() {
+    if sigr.is_zero() || sigs.is_zero() || sigs.is_high() || pubkey.infinity {
         return false;
     }
     let mut sn = Scalar::zero();
@@ -1102,9 +1097,7 @@ pub fn verify_ecdsa_direct(
     }
     let pk = ge_from_pubkey_bytes(pubkey_bytes)?;
     let mut msg = Scalar::zero();
-    if msg.set_b32(msg_hash) {
-        return None;
-    }
+    let _ = msg.set_b32(msg_hash);
     // Prefer GPU when CUDA is linked and a device is up; CPU on any miss.
     if crate::gpu::gpu_available() {
         let compact = ecdsa_sig_serialize_compact(&sigr, &sigs);
@@ -1213,5 +1206,43 @@ mod block443992_regression {
             Some(true),
             "sig2+pk1 must be VALID against codesep-stripped sighash — Core strips OP_CODESEPARATOR in SerializeScriptCode"
         );
+    }
+}
+
+#[cfg(test)]
+mod message_overflow_and_raw_verify {
+    use super::*;
+
+    #[test]
+    fn hash_at_least_n_verifies_and_raw_verify_rejects_high_s_and_infinity() {
+        let mut sk = Scalar::zero();
+        sk.set_int(1);
+        let msg_bytes = [0xffu8; 32];
+        let mut msg = Scalar::zero();
+        assert!(msg.set_b32(&msg_bytes));
+        let mut nonce = Scalar::zero();
+        nonce.set_int(2);
+        let (r, s) = ecdsa_sig_sign(&sk, &msg, &nonce).expect("sign");
+        let mut pkj = Gej::default();
+        ecmult_gen_const(&mut pkj, &sk);
+        let mut pk = Ge::default();
+        pk.set_gej_var(&pkj);
+        assert!(ecdsa_sig_verify(&r, &s, &pk, &msg));
+        let compact = ecdsa_sig_serialize_compact(&r, &s);
+        let pk33 = ge_to_compressed(&pk);
+        assert!(ecdsa_verify_one_compact(&compact, &msg_bytes, &pk33));
+        let der = ecdsa_sig_serialize_der(&r, &s);
+        assert_eq!(
+            verify_ecdsa_direct(&der, &pk33, &msg_bytes, true, true),
+            Some(true)
+        );
+        let mut high = s;
+        let tmp = high;
+        high.negate(&tmp);
+        assert!(high.is_high());
+        assert!(!ecdsa_sig_verify(&r, &high, &pk, &msg));
+        let mut infinity = pk;
+        infinity.infinity = true;
+        assert!(!ecdsa_sig_verify(&r, &s, &infinity, &msg));
     }
 }

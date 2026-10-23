@@ -26,7 +26,7 @@ This document describes which APIs in `blvm-secp256k1` are intended to run in *c
 | `schnorr::schnorr_sign`, `schnorr::xonly_pubkey_from_secret` | **Constant time** (secret) | `ecmult_gen_const` for k·G and d·G; branchless R.y parity. |
 | `schnorr::schnorr_verify`, `schnorr::schnorr_verify_batch` | Variable time OK | Public verification. |
 | `ecdh::ecdh`, `ecdh::ecdh_compressed` | **Constant time** (secret) | `ecmult_const`; branchless `half_modn` in GLV decomp. |
-| `ellswift::ellswift_xdh`, `ellswift_create` | **Constant time** (secret) | `ecmult_const` for the EC step. |
+| `ellswift::ellswift_xdh`, `ellswift_create` | **Fixed encode rounds** (secret) | 128 attempts, first success kept. `ecmult_const` for the EC step. No early return on a failed attempt. |
 | `musig` secret paths | **Constant time** (secret) | `ecmult_gen_const` and `Scalar::inv` where applicable. |
 | `ecmult::ecmult` | Variable time | Public / verify. |
 | `ecmult::ecmult_gen` | Variable time | Fast path; not for hardened secret k·G. |

@@ -271,7 +271,9 @@ impl FieldElement {
         z1 &= t3;
         z0 |= t4;
         z1 &= t4 ^ 0xF000000000000;
-        (z0 == 0) || (z1 == M)
+        let z0_zero = (z0 == 0) as u64;
+        let z1_m = (z1 == M) as u64;
+        (z0_zero | z1_m) != 0
     }
 
     /// Variable-time version of normalizes_to_zero (early exit).

@@ -17,6 +17,10 @@ mod imp {
 
     const SECP256K1_B: u32 = 7;
 
+    /// Attempts per encode. About one attempt in four succeeds, so 128 misses is
+    /// far below 2^-64. The loop does not stop when an earlier attempt works.
+    const ELLSWIFT_ENCODE_ROUNDS: u32 = 128;
+
     /// c1 = (sqrt(-3)-1)/2
     fn ellswift_c1() -> FieldElement {
         let b: [u8; 32] = [
@@ -193,12 +197,25 @@ mod imp {
     }
 
     /// Find ElligatorSwift encoding (u, t) for point P using prefix as PRNG seed.
-    fn elligatorswift_var(u32_out: &mut [u8; 32], t: &mut FieldElement, p: &Ge, prefix: &[u8]) {
+    ///
+    /// Always runs [`ELLSWIFT_ENCODE_ROUNDS`] attempts and keeps the first success.
+    /// The attempt count does not depend on the point.
+    fn elligatorswift_var(
+        u32_out: &mut [u8; 32],
+        t: &mut FieldElement,
+        p: &Ge,
+        prefix: &[u8],
+    ) -> bool {
+        use subtle::{Choice, ConditionallySelectable};
+
         let mut cnt: u32 = 0;
         let mut branch_hash = [0u8; 32];
         let mut branches_left = 0usize;
+        let mut found = Choice::from(0u8);
+        let mut kept_u = [0u8; 32];
+        let mut kept_t = FieldElement::zero();
 
-        loop {
+        for _ in 0..ELLSWIFT_ENCODE_ROUNDS {
             if branches_left == 0 {
                 branch_hash = ellswift_prng(prefix, cnt);
                 cnt += 1;
@@ -207,15 +224,26 @@ mod imp {
             branches_left -= 1;
             let branch = (branch_hash[branches_left >> 1] >> ((branches_left & 1) << 2)) & 7;
 
-            *u32_out = ellswift_prng(prefix, cnt);
+            let candidate_u = ellswift_prng(prefix, cnt);
             cnt += 1;
 
             let mut u = FieldElement::zero();
-            u.set_b32_mod(u32_out);
+            u.set_b32_mod(&candidate_u);
 
-            if xswiftec_inv_var(t, &p.x, &u, branch as i32) {
-                break;
+            let mut candidate_t = FieldElement::zero();
+            let ok = xswiftec_inv_var(&mut candidate_t, &p.x, &u, branch as i32);
+            let take = Choice::from(u8::from(ok)) & !found;
+            for i in 0..32 {
+                kept_u[i] = u8::conditional_select(&kept_u[i], &candidate_u[i], take);
             }
+            kept_t.cmov(&candidate_t, take);
+            found |= Choice::from(u8::from(ok));
+        }
+
+        *u32_out = kept_u;
+        *t = kept_t;
+        if !bool::from(found) {
+            return false;
         }
 
         t.normalize_weak();
@@ -228,6 +256,7 @@ mod imp {
             t.negate(&t_val, 1);
             t.normalize_weak();
         }
+        true
     }
 
     /// Decode (u, t) to fraction (xn, xd) representing X coordinate.
@@ -322,7 +351,9 @@ mod imp {
         prefix.extend_from_slice(rnd32);
         let mut u32_out = [0u8; 32];
         let mut t = FieldElement::zero();
-        elligatorswift_var(&mut u32_out, &mut t, &p, &prefix);
+        if !elligatorswift_var(&mut u32_out, &mut t, &p, &prefix) {
+            return None;
+        }
         let mut ell64 = [0u8; 64];
         ell64[0..32].copy_from_slice(&u32_out);
         t.normalize_weak();
@@ -353,7 +384,9 @@ mod imp {
         }
         let mut u32_out = [0u8; 32];
         let mut t = FieldElement::zero();
-        elligatorswift_var(&mut u32_out, &mut t, &p, &prefix);
+        if !elligatorswift_var(&mut u32_out, &mut t, &p, &prefix) {
+            return None;
+        }
         let mut ell64 = [0u8; 64];
         ell64[0..32].copy_from_slice(&u32_out);
         t.normalize_weak();
@@ -454,3 +487,32 @@ mod imp {
 pub use imp::{
     ellswift_create, ellswift_decode, ellswift_encode, ellswift_xdh, ellswift_xdh_hash_bip324,
 };
+
+#[cfg(all(test, any(target_arch = "x86_64", target_arch = "aarch64")))]
+mod tests {
+    use super::{ellswift_create, ellswift_decode};
+    use crate::ecdsa::pubkey_from_secret;
+    use crate::scalar::Scalar;
+
+    #[test]
+    fn create_uses_a_fixed_round_count_and_decodes() {
+        let mut secret = [0u8; 32];
+        secret[31] = 2;
+        let encoded = ellswift_create(&secret, None).expect("encode");
+        let again = ellswift_create(&secret, None).expect("encode");
+        assert_eq!(encoded, again);
+        let decoded = ellswift_decode(&encoded);
+        let mut scalar = Scalar::zero();
+        assert!(!scalar.set_b32(&secret));
+        let point = pubkey_from_secret(&scalar);
+        let mut decoded_x = decoded.x;
+        let mut point_x = point.x;
+        decoded_x.normalize();
+        point_x.normalize();
+        let mut left = [0u8; 32];
+        let mut right = [0u8; 32];
+        decoded_x.get_b32(&mut left);
+        point_x.get_b32(&mut right);
+        assert_eq!(left, right);
+    }
+}

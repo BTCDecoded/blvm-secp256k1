@@ -410,7 +410,7 @@ impl Scalar {
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
-            use crate::modinv64::{SECP256K1_SCALAR_MODINV_MODINFO, modinv64};
+            use crate::modinv64::{modinv64, SECP256K1_SCALAR_MODINV_MODINFO};
             let mut x = scalar_to_signed62(a);
             modinv64(&mut x, &SECP256K1_SCALAR_MODINV_MODINFO);
             scalar_from_signed62(self, &x);
@@ -896,41 +896,22 @@ fn scalar_mul_shift_var(r: &mut Scalar, a: &Scalar, b: &Scalar, shift: u32) {
     scalar_cadd_bit(r, 0, bit != 0);
 }
 
+/// Add `2^bit` when `flag` is set. `flag` is secret. Every limb is updated.
+/// A clear flag moves the bit out of range so each addend is zero.
 fn scalar_cadd_bit(r: &mut Scalar, bit: u32, flag: bool) {
-    let bit = if flag { bit } else { bit + 256 };
-    if bit >= 256 {
-        return;
-    }
-    let mut t: u128 = r.d[0] as u128
-        + if (bit >> 6) == 0 {
-            1u128 << (bit & 0x3F)
-        } else {
-            0
-        };
+    debug_assert!(bit < 256);
+    let bit = bit.wrapping_add(u32::from(flag).wrapping_sub(1) & 0x100);
+    let addend = |limb: u32| -> u128 { u128::from(u64::from((bit >> 6) == limb) << (bit & 0x3F)) };
+    let mut t: u128 = u128::from(r.d[0]) + addend(0);
     r.d[0] = t as u64;
     t >>= 64;
-    t += r.d[1] as u128
-        + if (bit >> 6) == 1 {
-            1u128 << (bit & 0x3F)
-        } else {
-            0
-        };
+    t += u128::from(r.d[1]) + addend(1);
     r.d[1] = t as u64;
     t >>= 64;
-    t += r.d[2] as u128
-        + if (bit >> 6) == 2 {
-            1u128 << (bit & 0x3F)
-        } else {
-            0
-        };
+    t += u128::from(r.d[2]) + addend(2);
     r.d[2] = t as u64;
     t >>= 64;
-    t += r.d[3] as u128
-        + if (bit >> 6) == 3 {
-            1u128 << (bit & 0x3F)
-        } else {
-            0
-        };
+    t += u128::from(r.d[3]) + addend(3);
     r.d[3] = t as u64;
 }
 
@@ -953,6 +934,19 @@ mod tests {
         let mut check = Scalar::zero();
         check.add(&r1, &lambda_r2);
         assert!(bool::from(check.ct_eq(&k)), "r1 + lambda*r2 should equal k");
+    }
+
+    #[test]
+    fn cadd_bit_false_is_a_noop_and_true_adds_the_bit() {
+        let mut same = Scalar::zero();
+        same.set_int(7);
+        let before = same;
+        scalar_cadd_bit(&mut same, 0, false);
+        assert!(bool::from(same.ct_eq(&before)));
+        scalar_cadd_bit(&mut same, 0, true);
+        let mut eight = Scalar::zero();
+        eight.set_int(8);
+        assert!(bool::from(same.ct_eq(&eight)));
     }
 
     #[test]
