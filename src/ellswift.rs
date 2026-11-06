@@ -396,6 +396,53 @@ mod imp {
         Some(ell64)
     }
 
+    /// X coordinate of an ElligatorSwift encoding, 32-byte big endian.
+    pub fn ellswift_decode_x(ell64: &[u8; 64]) -> [u8; 32] {
+        let point = ellswift_decode(ell64);
+        let mut x = point.x;
+        x.normalize();
+        let mut out = [0u8; 32];
+        x.get_b32(&mut out);
+        out
+    }
+
+    /// Raw x-only ECDH shared coordinate, before the BIP324 tagged hash.
+    pub fn ellswift_ecdh_xonly(ell_theirs: &[u8; 64], seckey: &[u8; 32]) -> Option<[u8; 32]> {
+        let mut u = FieldElement::zero();
+        let mut t = FieldElement::zero();
+        u.set_b32_mod(&ell_theirs[0..32].try_into().unwrap());
+        t.set_b32_mod(&ell_theirs[32..64].try_into().unwrap());
+        let mut xn = FieldElement::zero();
+        let mut xd = FieldElement::zero();
+        xswiftec_frac_var(&mut xn, &mut xd, &u, &t);
+        let mut xd_inv = FieldElement::zero();
+        xd_inv.inv(&xd);
+        let mut x = FieldElement::zero();
+        x.mul(&xn, &xd_inv);
+        let mut pt = Ge::default();
+        if !pt.set_xo_var(&x, false) {
+            return None;
+        }
+        let mut seckey_scalar = Scalar::zero();
+        if seckey_scalar.set_b32(seckey) {
+            return None;
+        }
+        if seckey_scalar.is_zero() {
+            return None;
+        }
+        let mut res = Gej::default();
+        ecmult_const(&mut res, &pt, &seckey_scalar);
+        let mut res_ge = Ge::default();
+        res_ge.set_gej_var(&res);
+        if res_ge.infinity {
+            return None;
+        }
+        res_ge.x.normalize();
+        let mut x32 = [0u8; 32];
+        res_ge.x.get_b32(&mut x32);
+        Some(x32)
+    }
+
     /// Decode 64-byte ElligatorSwift encoding to curve point.
     pub fn ellswift_decode(ell64: &[u8; 64]) -> Ge {
         let mut u = FieldElement::zero();
@@ -435,6 +482,35 @@ mod imp {
         *output = tagged_hash_bip324_ellswift_xdh(&data);
     }
 
+    /// Inverse encoding: `t` such that decoding `u || t` yields `x`, for one of eight cases.
+    /// `None` when that case has no encoding, or when `x` or `u` is not a canonical field element.
+    pub fn ellswift_xswiftec_inv(x32: &[u8; 32], u32: &[u8; 32], case: i32) -> Option<[u8; 32]> {
+        if !(0..8).contains(&case) {
+            return None;
+        }
+        let mut x = FieldElement::zero();
+        let mut u = FieldElement::zero();
+        x.set_b32_mod(x32);
+        u.set_b32_mod(u32);
+        x.normalize();
+        u.normalize();
+        let mut x_check = [0u8; 32];
+        let mut u_check = [0u8; 32];
+        x.get_b32(&mut x_check);
+        u.get_b32(&mut u_check);
+        if x_check != *x32 || u_check != *u32 {
+            return None;
+        }
+        let mut t = FieldElement::zero();
+        if !xswiftec_inv_var(&mut t, &x, &u, case) {
+            return None;
+        }
+        t.normalize();
+        let mut out = [0u8; 32];
+        t.get_b32(&mut out);
+        Some(out)
+    }
+
     /// X-only ECDH using ElligatorSwift. party: false = A, true = B.
     /// seckey must correspond to our ell encoding (ell_a64 if party false, ell_b64 if true).
     /// Multiplication by `seckey` uses constant-time `ecmult_const`.
@@ -445,38 +521,7 @@ mod imp {
         party: bool,
     ) -> Option<[u8; 32]> {
         let theirs = if party { ell_a64 } else { ell_b64 };
-        let mut u = FieldElement::zero();
-        let mut t = FieldElement::zero();
-        u.set_b32_mod(&theirs[0..32].try_into().unwrap());
-        t.set_b32_mod(&theirs[32..64].try_into().unwrap());
-        let mut xn = FieldElement::zero();
-        let mut xd = FieldElement::zero();
-        xswiftec_frac_var(&mut xn, &mut xd, &u, &t);
-        let mut xd_inv = FieldElement::zero();
-        xd_inv.inv(&xd);
-        let mut x = FieldElement::zero();
-        x.mul(&xn, &xd_inv);
-        let mut pt = Ge::default();
-        if !pt.set_xo_var(&x, false) {
-            return None;
-        }
-        let mut seckey_scalar = Scalar::zero();
-        if seckey_scalar.set_b32(seckey) {
-            return None;
-        }
-        if seckey_scalar.is_zero() {
-            return None;
-        }
-        let mut res = Gej::default();
-        ecmult_const(&mut res, &pt, &seckey_scalar);
-        let mut res_ge = Ge::default();
-        res_ge.set_gej_var(&res);
-        if res_ge.infinity {
-            return None;
-        }
-        res_ge.x.normalize();
-        let mut x32 = [0u8; 32];
-        res_ge.x.get_b32(&mut x32);
+        let x32 = ellswift_ecdh_xonly(theirs, seckey)?;
         let mut output = [0u8; 32];
         ellswift_xdh_hash_bip324(&mut output, &x32, ell_a64, ell_b64);
         Some(output)
@@ -485,12 +530,13 @@ mod imp {
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub use imp::{
-    ellswift_create, ellswift_decode, ellswift_encode, ellswift_xdh, ellswift_xdh_hash_bip324,
+    ellswift_create, ellswift_decode, ellswift_decode_x, ellswift_ecdh_xonly, ellswift_encode,
+    ellswift_xdh, ellswift_xdh_hash_bip324, ellswift_xswiftec_inv,
 };
 
 #[cfg(all(test, any(target_arch = "x86_64", target_arch = "aarch64")))]
 mod tests {
-    use super::{ellswift_create, ellswift_decode};
+    use super::{ellswift_create, ellswift_decode, ellswift_decode_x, ellswift_xswiftec_inv};
     use crate::ecdsa::pubkey_from_secret;
     use crate::scalar::Scalar;
 
@@ -514,5 +560,59 @@ mod tests {
         decoded_x.get_b32(&mut left);
         point_x.get_b32(&mut right);
         assert_eq!(left, right);
+    }
+
+    #[test]
+    fn ellswift_decode_matches_the_reference_vectors() {
+        let csv = include_str!("../tests/data/bip324/ellswift_decode_test_vectors.csv");
+        let mut rows = 0;
+        for line in csv.lines().skip(1) {
+            if line.is_empty() {
+                continue;
+            }
+            let (ell_hex, rest) = line.split_once(',').unwrap();
+            let x_hex = rest.split_once(',').unwrap().0;
+            let ell = hex_32_pair(ell_hex);
+            let got = ellswift_decode_x(&ell);
+            assert_eq!(hex::encode(got), x_hex, "{ell_hex}");
+            rows += 1;
+        }
+        assert_eq!(rows, 76);
+    }
+
+    #[test]
+    fn xswiftec_inv_matches_the_reference_vectors() {
+        let csv = include_str!("../tests/data/bip324/xswiftec_inv_test_vectors.csv");
+        let mut rows = 0;
+        for line in csv.lines().skip(1) {
+            if line.is_empty() {
+                continue;
+            }
+            let col: Vec<&str> = line.splitn(11, ',').collect();
+            assert!(col.len() >= 10, "short inverse row");
+            let u: [u8; 32] = hex::decode(col[0]).unwrap().try_into().unwrap();
+            let x: [u8; 32] = hex::decode(col[1]).unwrap().try_into().unwrap();
+            for case in 0..8 {
+                let expected = col[2 + case];
+                let got = ellswift_xswiftec_inv(&x, &u, case as i32);
+                if expected.is_empty() {
+                    assert!(got.is_none(), "case {case} encoded a rejected t");
+                    continue;
+                }
+                let t = got.expect("case encodes t");
+                assert_eq!(hex::encode(t), expected, "case {case}");
+                let mut ell = [0u8; 64];
+                ell[..32].copy_from_slice(&u);
+                ell[32..].copy_from_slice(&t);
+                assert_eq!(ellswift_decode_x(&ell), x, "case {case} does not decode");
+            }
+            rows += 1;
+        }
+        assert_eq!(rows, 32);
+    }
+
+    fn hex_32_pair(hex_str: &str) -> [u8; 64] {
+        let bytes = hex::decode(hex_str).unwrap();
+        bytes.try_into().unwrap()
     }
 }
