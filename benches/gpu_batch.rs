@@ -6,7 +6,7 @@
 //! cargo bench --features gpu --bench gpu_batch -- --sample-size 20 --warm-up-time 1 --measurement-time 2
 //! ```
 
-#![cfg(any(feature = "gpu", blvm_secp_gpu))]
+#![cfg(has_cuda_kernels)]
 
 use std::hint::black_box;
 use std::time::Instant;

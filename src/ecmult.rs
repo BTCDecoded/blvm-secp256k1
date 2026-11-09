@@ -43,10 +43,10 @@ mod precomputed {
 
 use precomputed::{PRE_G, PRE_G_128};
 
-/// Flattened PRE_G / PRE_G_128 bytes for GPU upload (`cfg(blvm_secp_gpu)`).
+/// Flattened PRE_G / PRE_G_128 bytes for GPU upload (`cfg(has_cuda_kernels)`).
 /// Each entry is 64 bytes: `GeStorage { x: FeStorage, y: FeStorage }` with `n[4]` LE u64 limbs
 /// matching CUDA `Fe.d[4]`.
-#[cfg(blvm_secp_gpu)]
+#[cfg(has_cuda_kernels)]
 pub(crate) fn pre_g_table_bytes() -> (&'static [u8], &'static [u8]) {
     const ENTRY: usize = core::mem::size_of::<GeStorage>();
     debug_assert_eq!(ENTRY, 64);

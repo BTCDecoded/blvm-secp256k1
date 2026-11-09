@@ -19,6 +19,7 @@ subtle = "2.5"
 num-bigint = "0.4"
 num-integer = "0.1"
 crossbeam-channel = "0.5"
+libloading = "0.8"
 zeroize = { version = "1.8", features = ["derive"] }
 
 # sha2-asm doesn't support Windows; split by target to avoid it there
@@ -53,10 +54,9 @@ codegen-units = 16
 [features]
 default = ["std"]
 std = []
-# CUDA is auto-linked when nvcc is found (not a Cargo default — CI without a
-# toolkit stays CPU). Runtime: GPU if a device inits, else CPU.
-# Opt out at runtime: BLVM_SECP_GPU=0. Opt out at build: BLVM_SECP256K1_NO_GPU=1.
-# This feature *requires* nvcc (fails the build if CUDA is missing).
-# Threshold BLVM_SECP_GPU_BATCH_MIN (default 1024). See cuda/README.md.
+# Empty. GPU kernels compile when nvcc is on the build machine and
+# BLVM_SECP256K1_NO_GPU is unset. There is no user-facing feature flag.
+# Kept so older `--features gpu` command lines still parse.
+# Runtime opt-out: BLVM_SECP_GPU=0. Threshold BLVM_SECP_GPU_BATCH_MIN (default 1024).
 gpu = []
 

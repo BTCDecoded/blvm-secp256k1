@@ -35,9 +35,8 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
-      # Default auto-links CUDA when nvcc is present (this self-hosted runner).
-      # `--features gpu` still *requires* nvcc. Do not `--all-features` on a
-      # CPU-only runner; use BLVM_SECP256K1_NO_GPU=1 to force CPU.
+      # Kernels compile when nvcc is present. libcudart is not linked.
+      # BLVM_SECP256K1_NO_GPU=1 forces a CPU-only build.
       - name: Build
         run: cargo build --release
 

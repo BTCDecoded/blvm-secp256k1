@@ -1,4 +1,4 @@
-//! CPU-only stubs when CUDA was not linked (`cfg(not(blvm_secp_gpu))`).
+//! CPU-only stubs when CUDA kernels were not compiled (`cfg(not(has_cuda_kernels))`).
 //!
 //! Same public surface as [`crate::gpu`] so callers can always try GPU and
 //! fall back when this module returns `None` / `false`.

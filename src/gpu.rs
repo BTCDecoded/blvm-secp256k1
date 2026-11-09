@@ -1,6 +1,7 @@
-//! In-tree CUDA GPU batch verify (`cfg(blvm_secp_gpu)`; auto when nvcc is found).
+//! In-tree CUDA GPU batch verify (`cfg(has_cuda_kernels)`; auto when nvcc is found).
 //!
 //! Links static `libblvm_secp_gpu` built from `cuda/` via nvcc (see `build.rs`).
+//! `libcudart` is not a link dependency. [`cuda_dyn`] loads it on first use.
 //! No UltrafastSecp256k1 / `libufsecp`.
 //!
 //! ## Runtime policy
@@ -20,6 +21,9 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
 
 use std::os::raw::{c_char, c_int, c_void};
+
+#[path = "cuda_dyn.rs"]
+mod cuda_dyn;
 
 const BLVM_SECP_GPU_OK: c_int = 0;
 
@@ -375,17 +379,16 @@ fn device_init_kat(ctx: *mut GpuCtx) -> Result<(), &'static str> {
 
 fn try_create_pool() -> Option<GpuPool> {
     if env_disabled("BLVM_SECP_GPU") {
-        eprintln!("[BLVM_SECP_GPU] disabled via BLVM_SECP_GPU — using CPU");
         return None;
     }
+    // One probe. None means no library or no device; callers use the CPU path.
+    cuda_dyn::handle()?;
     unsafe {
         if blvm_secp_gpu_is_available() == 0 {
-            eprintln!("[BLVM_SECP_GPU] CUDA unavailable — using CPU");
             return None;
         }
         let n_dev = blvm_secp_gpu_device_count();
         if n_dev == 0 {
-            eprintln!("[BLVM_SECP_GPU] no CUDA devices — using CPU");
             return None;
         }
         let want = gpu_ctx_count();
@@ -703,6 +706,7 @@ pub fn try_ecdsa_verify_batch(
     msgs: &[[u8; 32]],
     pubkeys: &[[u8; 33]],
 ) -> Option<Vec<bool>> {
+    cuda_dyn::handle()?;
     let n = sigs.len().min(msgs.len()).min(pubkeys.len());
     if n == 0 {
         return Some(Vec::new());
@@ -775,6 +779,7 @@ pub fn try_schnorr_verify_batch(
     msgs: &[&[u8]],
     pubkeys: &[[u8; 32]],
 ) -> Option<Vec<bool>> {
+    cuda_dyn::handle()?;
     let n = sigs.len().min(msgs.len()).min(pubkeys.len());
     if n == 0 {
         return Some(Vec::new());
