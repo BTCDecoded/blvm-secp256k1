@@ -48,8 +48,8 @@ fn ecdsa_const_p_minus_order() -> &'static FieldElement {
 }
 
 /// Batch verify ECDSA signatures. Returns true if all valid, false if any invalid.
-/// Uses random linear combination: sum z_i*(u1_i*G + u2_i*P_i) == sum z_i*R_i.
-/// z_i = r_i + s_i (deterministic from sig). Rejects high-S.
+/// Uses a verifier-chosen linear combination: sum z_i*(u1_i*G + u2_i*P_i) == sum z_i*R_i.
+/// Each z_i is a fresh nonzero scalar. Rejects high-S.
 ///
 /// Large batches (≥ [`crate::gpu::GPU_BATCH_MIN`]) try native CUDA when linked
 /// and a device is up; GPU miss falls back to CPU.
@@ -221,9 +221,7 @@ fn ecdsa_verify_batch_stack(
         }
         r_pt_vec[i] = r_ge;
 
-        let mut z = Scalar::zero();
-        z.add(&sigr, &sigs_scalar);
-        z_vec[i] = z;
+        z_vec[i] = Scalar::random_nonzero();
     }
 
     let mut g_scalar = Scalar::zero();
@@ -306,9 +304,7 @@ fn ecdsa_verify_batch_heap(
         }
         r_pt_vec.push(r_ge);
 
-        let mut z = Scalar::zero();
-        z.add(&sigr, &sigs_scalar);
-        z_vec.push(z);
+        z_vec.push(Scalar::random_nonzero());
     }
 
     let mut g_scalar = Scalar::zero();

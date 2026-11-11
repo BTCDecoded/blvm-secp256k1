@@ -295,12 +295,7 @@ fn schnorr_verify_batch_parse(
         state.e_scalars[i] = e;
 
         state.r_points[i] = lift_x(&r_bytes)?;
-
-        let mut random = Scalar::zero();
-        let _ = random.set_b32(&r_bytes);
-        let mut random_tmp = Scalar::zero();
-        random_tmp.add(&random, &e);
-        state.randoms[i] = random_tmp;
+        state.randoms[i] = Scalar::random_nonzero();
     }
     Some(())
 }
@@ -477,12 +472,7 @@ fn schnorr_verify_batch_heap(
 
         let r_ge = lift_x(&r_bytes)?;
         r_points.push(r_ge);
-
-        let mut random = Scalar::zero();
-        let _ = random.set_b32(&r_bytes);
-        let mut random_tmp = Scalar::zero();
-        random_tmp.add(&random, &e);
-        randoms.push(random_tmp);
+        randoms.push(Scalar::random_nonzero());
     }
 
     let mut g_scalar = Scalar::zero();

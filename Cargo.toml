@@ -16,6 +16,7 @@ path = "src/lib.rs"
 
 [dependencies]
 subtle = "2.5"
+getrandom = "0.2"
 num-bigint = "0.4"
 num-integer = "0.1"
 crossbeam-channel = "0.5"

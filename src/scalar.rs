@@ -138,6 +138,19 @@ impl Scalar {
         (self.d[0] | self.d[1] | self.d[2] | self.d[3]) == 0
     }
 
+    /// Verifier-chosen batch weight. Zero is rejected so a row cannot drop out of the sum.
+    pub(crate) fn random_nonzero() -> Self {
+        loop {
+            let mut bytes = [0u8; 32];
+            getrandom::getrandom(&mut bytes).expect("batch challenge entropy");
+            let mut scalar = Self::zero();
+            let _ = scalar.set_b32(&bytes);
+            if !scalar.is_zero() {
+                return scalar;
+            }
+        }
+    }
+
     pub fn is_one(&self) -> bool {
         (self.d[0] ^ 1) | self.d[1] | self.d[2] | self.d[3] == 0
     }
